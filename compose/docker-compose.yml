@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  gluster1:
+    image: drezael/glusterfs:0.1
+    container_name: gluster1
+    hostname: gluster1
+    restart: unless-stopped
+    ulimits:
+      nofile: 65536
+    ports:
+      - "24007:24007"                # glusterd (Mgmt)
+      - "24008:24008"                # Brick-Transport
+      - "49152-49251:49152-49251"    # Brick-Port-Range (Default)
+    environment:
+      # Autokonfiguration
+      AUTO_PROBE_PEERS: "true"
+      AUTO_CREATE_VOLUMES: "true"
+      MANAGER_NODE: "gluster1"
+      # Sicherheit
+      FAIL_ON_UNMOUNTED_BRICK: "true"
+      ALLOW_SINGLE_BRICK: "false"
+      # Optional zusätzliche Brick-Pfade per ENV (kommagetrennt)
+      # BRICKS: "/gluster/bricks/vol1/brick,/gluster/bricks/vol2/brick"
+    volumes:
+      # EIN Persistenz-Mount für State/Config/Logs
+      - ./gluster:/gluster
+
+      # Jeder Brick als eigener Bind-Mount (ext4 auf dem Host)
+      - /data/gluster/vol1_brick:/gluster/bricks/vol1/brick
+      - /data/gluster/vol2_brick:/gluster/bricks/vol2/brick
