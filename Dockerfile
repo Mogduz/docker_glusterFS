@@ -12,7 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MANAGER_NODE="" \
     FAIL_ON_UNMOUNTED_BRICK="true" \
     BRICKS="" \
-    ALLOW_SINGLE_BRICK="false"   # ← Safety-Guard Toggle
+    ALLOW_SINGLE_BRICK="false"
 
 # Server + YAML-Tools
 RUN apt-get update \
