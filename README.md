@@ -268,3 +268,58 @@ Add a `LICENSE` file at the repository root and adjust this section accordingly.
 
 - GlusterFS project and documentation
 - Community examples and best practices around containerized Gluster nodes
+
+---
+
+## Network isolation: bind to a specific internal IP (no new networks)
+
+If your host already has two network interfaces (e.g., one public and one **internal**) and you want the container to listen **only** on the internal address (e.g., `10.0.1.2`), you don't need any special Docker networks and you **do not** need to change the Dockerfile. Simply bind the published ports to the internal host IP.
+
+### docker-compose
+```yaml
+version: "3.9"
+services:
+  gluster1:
+    image: drezael/glusterfs:0.1
+    container_name: gluster1
+    hostname: gluster1
+    restart: unless-stopped
+    ulimits: { nofile: 65536 }
+    ports:
+      - "10.0.1.2:24007:24007"                 # glusterd (mgmt)
+      - "10.0.1.2:24008:24008"
+      - "10.0.1.2:49152-49251:49152-49251"     # brick port range
+    volumes:
+      - /srv/gluster:/gluster
+      - /data/gluster/vol1:/gluster/bricks/vol1/brick
+      # - /data/gluster/vol2:/gluster/bricks/vol2/brick
+    environment:
+      AUTO_PROBE_PEERS: "true"
+      AUTO_CREATE_VOLUMES: "true"
+      MANAGER_NODE: "gluster1"
+```
+
+### docker run
+```bash
+docker run -d --name gluster1 --hostname gluster1 \
+  --ulimit nofile=65536:65536 \
+  -p 10.0.1.2:24007:24007 \
+  -p 10.0.1.2:24008:24008 \
+  -p 10.0.1.2:49152-49251:49152-49251 \
+  -v /srv/gluster:/gluster \
+  -v /data/gluster/vol1:/gluster/bricks/vol1/brick \
+  -e AUTO_PROBE_PEERS=true \
+  -e AUTO_CREATE_VOLUMES=true \
+  -e MANAGER_NODE=gluster1 \
+  drezael/glusterfs:0.1
+```
+
+**Notes**
+- Only the internal address `10.0.1.2` will accept connections; nothing is bound on the public interface.
+- In your `cluster.yml`, use the internal IPs/hostnames for peers.
+- Outbound traffic still follows the host’s routing; if you want to block Internet egress, do that in the host firewall.
+- Verify binding on the host:
+  ```bash
+  ss -ltnp | grep -E '24007|24008|4915[2-9][0-9]|492[0-4][0-9]|4925[0-1]'
+  # Output should show 10.0.1.2:PORT, not 0.0.0.0:PORT
+  ```
