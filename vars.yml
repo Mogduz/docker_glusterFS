@@ -1,4 +1,4 @@
-name: glusterFS
+name: glusterfs
 tags:
   - 0.1
   - latest
