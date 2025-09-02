@@ -11,7 +11,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     AUTO_CREATE_VOLUMES="false" \
     MANAGER_NODE="" \
     FAIL_ON_UNMOUNTED_BRICK="true" \
-    BRICKS=""
+    BRICKS="" \
+    ALLOW_SINGLE_BRICK="false"   # ← Safety-Guard Toggle
 
 # Server + YAML-Tools
 RUN apt-get update \
