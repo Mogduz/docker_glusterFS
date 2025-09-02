@@ -1,0 +1,6 @@
+name: glusterFS
+tags:
+  - 0.1
+  - latest
+  - testing
+push: True
