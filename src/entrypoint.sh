@@ -28,68 +28,113 @@ FAIL_ON_UNMOUNTED_BRICK="${FAIL_ON_UNMOUNTED_BRICK:-true}"
 BRICKS_ENV="${BRICKS:-}"
 ALLOW_SINGLE_BRICK="${ALLOW_SINGLE_BRICK:-false}"
 
+# Readiness-Parameter (neu)
+GLUSTER_WAIT_TRIES="${GLUSTER_WAIT_TRIES:-60}"  # wie oft prüfen
+GLUSTER_WAIT_SLEEP="${GLUSTER_WAIT_SLEEP:-1}"   # Sekunden zwischen den Checks
+
 # ------------------------ banner ------------------------
 echo -e "${C_BOLD}${C_CYAN}
   GlusterFS Container Entrypoint
 ${C_RESET}"
-log "Node-Name          : ${C_BOLD}${NODE}${C_RESET}"
-log "Persistenz-Root    : ${C_BOLD}${ROOT}${C_RESET}"
-log "YAML-Konfig        : ${C_BOLD}${CONFIG}${C_RESET}"
-log "Peers auto-probe   : ${C_BOLD}${AUTO_PROBE}${C_RESET}"
-log "Volumes auto-manage: ${C_BOLD}${AUTO_CREATE}${C_RESET}"
-log "Manager-Node       : ${C_BOLD}${MANAGER_NODE:-<nicht gesetzt>}${C_RESET}"
-log "Fail bei ungemount.: ${C_BOLD}${FAIL_ON_UNMOUNTED_BRICK}${C_RESET}"
-log "Single-Brick erlaubt: ${C_BOLD}${ALLOW_SINGLE_BRICK}${C_RESET}"
-[ -n "$BRICKS_ENV" ] && log "BRICKS (ENV)       : ${C_BOLD}${BRICKS_ENV}${C_RESET}"
+log "Node-Name            : ${C_BOLD}${NODE}${C_RESET}"
+log "Persistenz-Root      : ${C_BOLD}${ROOT}${C_RESET}"
+log "YAML-Konfig          : ${C_BOLD}${CONFIG}${C_RESET}"
+log "Peers auto-probe     : ${C_BOLD}${AUTO_PROBE}${C_RESET}"
+log "Volumes auto-manage  : ${C_BOLD}${AUTO_CREATE}${C_RESET}"
+log "Manager-Node         : ${C_BOLD}${MANAGER_NODE:-<nicht gesetzt>}${C_RESET}"
+log "Fail bei ungemount.  : ${C_BOLD}${FAIL_ON_UNMOUNTED_BRICK}${C_RESET}"
+log "Single-Brick erlaubt : ${C_BOLD}${ALLOW_SINGLE_BRICK}${C_RESET}"
+log "Wait(tries/sleep)    : ${C_BOLD}${GLUSTER_WAIT_TRIES}${C_RESET}/${C_BOLD}${GLUSTER_WAIT_SLEEP}${C_RESET}s"
+[ -n "$BRICKS_ENV" ] && log "BRICKS (ENV)         : ${C_BOLD}${BRICKS_ENV}${C_RESET}"
 
 # ------------------------ Vorbedingungen ------------------------
 step "Verzeichnisstruktur & Basismount prüfen"
 mkdir -p "$ROOT/etc" "$ROOT/glusterd" "$ROOT/logs" "$ROOT/bricks"
-if mountpoint -q "$ROOT"; then ok "Persistenz-Mount erkannt: $ROOT"; else
-  err "Persistenz-Mount $ROOT NICHT erkannt. Bitte Hostpfad z. B. mit -v /srv/gluster:$ROOT einhängen."; exit 1; fi
+if mountpoint -q "$ROOT"; then
+  ok "Persistenz-Mount erkannt: $ROOT"
+else
+  err "Persistenz-Mount $ROOT NICHT erkannt. Bitte Hostpfad z. B. mit -v /srv/gluster:$ROOT einhängen."
+  exit 1
+fi
 
 # Defaults seeden falls leer
 if [ -z "$(ls -A "$ROOT/etc" 2>/dev/null || true)" ]; then
   step "Seede Default-Konfigurationen nach $ROOT/etc"
-  cp -a /opt/glusterfs-defaults/. "$ROOT/etc"/; ok "Defaults kopiert"
-else ok "Config-Verzeichnis bereits befüllt"; fi
+  cp -a /opt/glusterfs-defaults/. "$ROOT/etc"/
+  ok "Defaults kopiert"
+else
+  ok "Config-Verzeichnis bereits befüllt"
+fi
 
 # ------------------------ Bricks ermitteln ------------------------
 step "Bricks ermitteln (YAML + ENV)"
 declare -a BRICK_PATHS=()
 if [[ -f "$CONFIG" ]]; then
   log "Lese YAML: $CONFIG"
-  while IFS= read -r b; do [[ -n "$b" && "$b" != "null" ]] && BRICK_PATHS+=("$b"); done \
-    < <(yq -r '.local_bricks[]? // empty' "$CONFIG")
-else warn "Keine YAML-Konfig gefunden (optional): $CONFIG"; fi
+  while IFS= read -r b; do
+    [[ -n "$b" && "$b" != "null" ]] && BRICK_PATHS+=("$b")
+  done < <(yq -r '.local_bricks[]? // empty' "$CONFIG")
+else
+  warn "Keine YAML-Konfig gefunden (optional): $CONFIG"
+fi
 if [[ -n "$BRICKS_ENV" ]]; then
   IFS=',' read -r -a extra <<< "$BRICKS_ENV"
-  for raw in "${extra[@]}"; do b="$(echo "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    [[ -z "$b" || "$b" == "null" ]] && continue; BRICK_PATHS+=("$b"); done
+  for raw in "${extra[@]}"; do
+    b="$(echo "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ -z "$b" || "$b" == "null" ]] && continue
+    BRICK_PATHS+=("$b")
+  done
 fi
 if ((${#BRICK_PATHS[@]} > 0)); then
   mapfile -t BRICK_PATHS < <(printf "%s\n" "${BRICK_PATHS[@]}" | awk '!seen[$0]++')
-  ok "Gefundene Bricks (${#BRICK_PATHS[@]}):"; for b in "${BRICK_PATHS[@]}"; do echo "  - $b"; done
-else warn "Keine Bricks angegeben. YAML .local_bricks oder ENV BRICKS verwenden."; fi
+  ok "Gefundene Bricks (${#BRICK_PATHS[@]}):"
+  for b in "${BRICK_PATHS[@]}"; do echo "  - $b"; done
+else
+  warn "Keine Bricks angegeben. YAML .local_bricks oder ENV BRICKS verwenden."
+fi
 
 # ------------------------ Brick-Mounts prüfen ------------------------
 step "Bricks anlegen & Bind-Mounts verifizieren"
 for brick in "${BRICK_PATHS[@]}"; do
   mkdir -p "$brick"
-  if mountpoint -q "$brick"; then ok "Brick gemountet: $brick"; else
+  if mountpoint -q "$brick"; then
+    ok "Brick gemountet: $brick"
+  else
     if [[ "$FAIL_ON_UNMOUNTED_BRICK" == "true" ]]; then
       err "Brick NICHT gemountet (Bind-Mount fehlt): $brick"
-      err "Bitte Hostpfad einhängen, z. B.:  -v /data/vol1_brick:$brick"; exit 1
-    else warn "Brick nicht gemountet, verwende Container-FS (nur Test): $brick"; fi
+      err "Bitte Hostpfad einhängen, z. B.:  -v /data/vol1_brick:$brick"
+      exit 1
+    else
+      warn "Brick nicht gemountet, verwende Container-FS (nur Test): $brick"
+    fi
   fi
 done
 
-# ------------------------ glusterd starten ------------------------
+# ------------------------ glusterd starten + READINESS (neu) ------------------------
 step "Starte glusterd (Management-Daemon)"
-/usr/sbin/glusterd & GLUSTERD_PID=$!
+/usr/sbin/glusterd &
+GLUSTERD_PID=$!
 ok "glusterd PID: $GLUSTERD_PID"
-for i in {1..20}; do pgrep -x glusterd >/dev/null 2>&1 && break || sleep 0.3; done
-gluster --version >/dev/null 2>&1 && ok "Gluster CLI verfügbar"
+
+wait_for_glusterd() {
+  local tries="$GLUSTER_WAIT_TRIES"
+  local sleep_s="$GLUSTER_WAIT_SLEEP"
+  for i in $(seq 1 "$tries"); do
+    # harmlose Calls; einer reicht meist, beide erhöhen die Chance
+    if gluster --mode=script volume list >/dev/null 2>&1 || \
+       gluster pool list >/dev/null 2>&1; then
+      ok "glusterd ist bereit (Try $i/$tries)"
+      return 0
+    fi
+    sleep "$sleep_s"
+  done
+  err "glusterd nach $(($tries * $sleep_s))s nicht bereit."
+  echo "=== letzte 200 Zeilen glusterd.log ==="
+  tail -n 200 "$ROOT/logs/glusterd.log" || true
+  exit 98
+}
+step "Warte auf Readiness von glusterd"
+wait_for_glusterd
 
 # ------------------------ Peers probe (optional) ------------------------
 if [[ -f "$CONFIG" && "$AUTO_PROBE" == "true" ]]; then
@@ -99,44 +144,47 @@ if [[ -f "$CONFIG" && "$AUTO_PROBE" == "true" ]]; then
     [[ -z "$peer" || "$peer" == "null" || "$peer" == "$NODE" ]] && continue
     has_peer=true
     for i in {1..10}; do
-      if gluster peer probe "$peer" >/dev/null 2>&1; then ok "Peer geprobt: $peer"; break; fi
-      warn "Peer probe fehlgeschlagen ($peer), Versuch $i/10 – erneut in 2s…"; sleep 2
+      if gluster peer probe "$peer" >/dev/null 2>&1; then
+        ok "Peer geprobt: $peer"
+        break
+      fi
+      warn "Peer probe fehlgeschlagen ($peer), Versuch $i/10 – erneut in 2s…"
+      sleep 2
     done
   done < <(yq -r '.peers[]? // empty' "$CONFIG")
   [[ "$has_peer" == false ]] && warn "Keine externen Peers in YAML gefunden (oder nur Self)."
-else log "Peer-Probing übersprungen (kein YAML oder AUTO_PROBE_PEERS=false)"; fi
+else
+  log "Peer-Probing übersprungen (kein YAML oder AUTO_PROBE_PEERS=false)"
+fi
 
 # ------------------------ Volumes verwalten (optional) ------------------------
-# Helper: Safety-Checks für Volume-Definition
 check_volume_safety() {
   local idx="$1" name="$2" vtype="$3"; shift 3
   local -a bricks=( "$@" )
   local n="${#bricks[@]}"
 
-  # 1) Single-Brick-Guard (typisch distribute mit 1 Brick)
+  # 1) Single-Brick-Guard
   if (( n == 1 )); then
     if [[ "$ALLOW_SINGLE_BRICK" == "true" ]]; then
       warn "Volume '${name}' hat NUR 1 Brick (kein Redundanz/Quorum). ALLOW_SINGLE_BRICK=true → fortsetzen."
     else
       err  "Volume '${name}' hat NUR 1 Brick (kein Redundanz/Quorum)."
-      err  "Wenn du das bewusst willst (z. B. Test), setze: -e ALLOW_SINGLE_BRICK=true"
+      err  "Wenn bewusst (z. B. Test), setze: -e ALLOW_SINGLE_BRICK=true"
       err  "Besser: zweiten Brick (oder Replikation/Disperse) definieren."
       exit 42
     fi
   fi
 
-  # 2) Replikations-Formalia
+  # 2) replicate-Formalia
   if [[ "$vtype" == "replicate" ]]; then
     local replica arbiter; replica="$(yq -r ".volumes[$idx].replica // \"\"" "$CONFIG")"
     arbiter="$(yq -r ".volumes[$idx].arbiter // \"\"" "$CONFIG")"
     if [[ -z "$replica" || "$replica" == "null" ]]; then
       err "replicate-Volume '${name}' ohne 'replica' definiert."; exit 43
     fi
-    # bricks müssen Vielfaches von replica sein
     if (( n % replica != 0 )); then
       err "replicate-Volume '${name}': Brick-Anzahl ($n) ist kein Vielfaches von replica ($replica)."; exit 44
     fi
-    # optionale Plausibilitätswarnung für Arbiter
     if [[ -n "$arbiter" && "$arbiter" != "null" ]]; then
       if (( arbiter >= replica )); then
         warn "Arbiter ($arbiter) >= replica ($replica) bei '${name}' wirkt unplausibel – bitte prüfen."
@@ -144,7 +192,7 @@ check_volume_safety() {
     fi
   fi
 
-  # 3) Disperse-Formalia
+  # 3) disperse-Formalia
   if [[ "$vtype" == "disperse" ]]; then
     local disperse redundancy
     disperse="$(yq -r ".volumes[$idx].disperse_count // \"\"" "$CONFIG")"
@@ -175,9 +223,12 @@ if [[ "$AUTO_CREATE" == "true" ]]; then
       vtype="$(yq -r ".volumes[$i].type // \"distribute\"" "$CONFIG")"
       transport="$(yq -r ".volumes[$i].transport // \"tcp\"" "$CONFIG")"
       mapfile -t bricks < <(yq -r ".volumes[$i].bricks[]? // empty" "$CONFIG")
-      if [[ ${#bricks[@]} -eq 0 ]]; then warn "Volume '$name' ohne bricks – übersprungen."; continue; fi
+      if [[ ${#bricks[@]} -eq 0 ]]; then
+        warn "Volume '$name' ohne bricks – übersprungen."
+        continue
+      fi
 
-      # --- Safety-Checks vor dem Create ---
+      # Safety-Checks
       check_volume_safety "$i" "$name" "$vtype" "${bricks[@]}"
 
       if gluster volume info "$name" >/dev/null 2>&1; then
@@ -199,7 +250,8 @@ if [[ "$AUTO_CREATE" == "true" ]]; then
             ;;
           distribute|*) ;;
         esac
-        cmd+=("transport" "$transport"); cmd+=("${bricks[@]}")
+        cmd+=("transport" "$transport")
+        cmd+=("${bricks[@]}")
         log "Erzeuge Volume mit Befehl:\n  ${C_DIM}${cmd[*]}${C_RESET}"
         "${cmd[@]}"
       fi
@@ -213,11 +265,19 @@ if [[ "$AUTO_CREATE" == "true" ]]; then
         done
 
       # Starten
-      if gluster volume status "$name" >/dev/null 2>&1; then ok "Volume läuft: $name"; else
-        log "Starte Volume: $name"; gluster volume start "$name" || true; fi
+      if gluster volume status "$name" >/dev/null 2>&1; then
+        ok "Volume läuft: $name"
+      else
+        log "Starte Volume: $name"
+        gluster volume start "$name" || true
+      fi
     done
-  else warn "AUTO_CREATE_VOLUMES=true, aber keine YAML gefunden – nichts zu tun."; fi
-else log "Volume-Management deaktiviert (AUTO_CREATE_VOLUMES=false)"; fi
+  else
+    warn "AUTO_CREATE_VOLUMES=true, aber keine YAML gefunden – nichts zu tun."
+  fi
+else
+  log "Volume-Management deaktiviert (AUTO_CREATE_VOLUMES=false)"
+fi
 
 # ------------------------ Übergabe an glusterd ------------------------
 step "Läuft. Übergabe an glusterd (PID $GLUSTERD_PID) – Logs unter $ROOT/logs/"
