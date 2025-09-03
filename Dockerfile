@@ -37,11 +37,17 @@ EXPOSE 24007/tcp 24008/tcp 49152-49251/tcp
 # Einziger Persistenz-Mount: /gluster
 VOLUME ["/gluster"]
 
+
+# Copy modular scripts
+COPY ./src/scripts/ /opt/gluster-scripts/
+RUN chmod +x /opt/gluster-scripts/entrypoint.sh \
+    /opt/gluster-scripts/lib/*.sh \
+    /opt/gluster-scripts/steps/*.sh
+
 # Entrypoint
-COPY src/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 \
   CMD pgrep -x glusterd >/dev/null || exit 1
 
-CMD ["/entrypoint.sh"]
+CMD ["/opt/gluster-scripts/entrypoint.sh"]
