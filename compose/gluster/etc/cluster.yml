@@ -1,0 +1,23 @@
+# /srv/gluster/etc/cluster.yml
+manager_node: gluster1
+
+# In dieser Demo nur der lokale Node
+peers:
+  - gluster1
+
+# Lokale Brick-Pfade (werden beim Start geprüft/angelegt)
+local_bricks:
+  - /gluster/bricks/vol1/brick
+  - /gluster/bricks/vol2/brick
+
+# Ein Volume: distribute mit zwei Bricks (keine Redundanz, aber Guard passt)
+volumes:
+  - name: gv0
+    type: distribute
+    transport: tcp
+    bricks:
+      - gluster1:/gluster/bricks/vol1/brick
+      - gluster1:/gluster/bricks/vol2/brick
+    options:
+      nfs.disable: "on"
+      performance.client-io-threads: "on"
