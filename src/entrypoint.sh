@@ -33,8 +33,10 @@ GLUSTER_WAIT_SLEEP="${GLUSTER_WAIT_SLEEP:-1}"
 CREATE_RETRIES="${CREATE_RETRIES:-10}"
 CREATE_RETRY_SLEEP="${CREATE_RETRY_SLEEP:-2}"
 REWRITE_LOCAL_BRICKS="${REWRITE_LOCAL_BRICKS:-true}"
+LOCAL_BRICK_HOST="${LOCAL_BRICK_HOST:-127.0.0.1}"   # wohin lokale Bricks umschreiben
 GLUSTER_FORCE_CREATE="${GLUSTER_FORCE_CREATE:-false}"
 
+# ---------- banner ----------
 echo -e "${C_BOLD}${C_CYAN}\n  GlusterFS Container Entrypoint\n${C_RESET}"
 log "Node-Name            : ${C_BOLD}${NODE}${C_RESET}"
 log "Persistenz-Root      : ${C_BOLD}${ROOT}${C_RESET}"
@@ -45,7 +47,7 @@ log "Manager-Node         : ${C_BOLD}${MANAGER_NODE:-<nicht gesetzt>}${C_RESET}"
 log "Fail bei ungemount.  : ${C_BOLD}${FAIL_ON_UNMOUNTED_BRICK}${C_RESET}"
 log "Single-Brick erlaubt : ${C_BOLD}${ALLOW_SINGLE_BRICK}${C_RESET}"
 log "Wait(tries/sleep)    : ${C_BOLD}${GLUSTER_WAIT_TRIES}${C_RESET}/${C_BOLD}${GLUSTER_WAIT_SLEEP}${C_RESET}s"
-log "Rewrite local bricks : ${C_BOLD}${REWRITE_LOCAL_BRICKS}${C_RESET}"
+log "Rewrite local bricks : ${C_BOLD}${REWRITE_LOCAL_BRICKS}${C_RESET} → ${C_BOLD}${LOCAL_BRICK_HOST}${C_RESET}"
 [ -n "$BRICKS_ENV" ] && log "BRICKS (ENV)         : ${C_BOLD}${BRICKS_ENV}${C_RESET}"
 
 # ---------- prereqs ----------
@@ -57,6 +59,7 @@ if ! mountpoint -q "$ROOT"; then
 fi
 ok "Persistenz-Mount erkannt: $ROOT"
 
+# Defaults seeden falls leer
 if [ -z "$(ls -A "$ROOT/etc" 2>/dev/null || true)" ]; then
   step "Seede Default-Konfigurationen nach $ROOT/etc"
   cp -a /opt/glusterfs-defaults/. "$ROOT/etc"/
@@ -104,7 +107,7 @@ done
 
 # ---------- glusterd start + readiness ----------
 step "Starte glusterd (Management-Daemon)"
-/usr/sbin/glusterd &
+/usr/sbin/glusterd -N &   # wichtig: -N (nicht daemonisieren)
 GLUSTERD_PID=$!
 ok "glusterd PID: $GLUSTERD_PID"
 
@@ -125,7 +128,6 @@ step "Warte auf Readiness von glusterd"
 wait_for_glusterd
 ok "Gluster CLI verfügbar"
 
-# kleine Auflösungsdiagnose
 SELF_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 RESOLVED_NODE_IP="$(getent hosts "$NODE" 2>/dev/null | awk '{print $1}' | head -1 || true)"
 log "Self IP: ${SELF_IP:-<unk>}, ${NODE} → ${RESOLVED_NODE_IP:-<unk>}"
@@ -176,13 +178,16 @@ check_volume_safety() {
   fi
 }
 
-# Helper: rewrite local bricks to SELF_IP (avoids name-resolution issues)
+# rewrite lokale Bricks (Host==Self) → LOCAL_BRICK_HOST (Default: 127.0.0.1)
 rewrite_local_bricks() {
   local -a in=( "$@" ) out=()
+  local self_ip resolved_ip
+  self_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  resolved_ip="$(getent hosts "$NODE" 2>/dev/null | awk '{print $1}' | head -1 || true)"
   for spec in "${in[@]}"; do
     local host="${spec%%:*}" path="${spec#*:}"
-    if [[ "$REWRITE_LOCAL_BRICKS" == "true" && ( "$host" == "$NODE" || "$host" == "localhost" || "$host" == "$RESOLVED_NODE_IP" ) ]]; then
-      local new="${SELF_IP:-$host}:$path"
+    if [[ "$REWRITE_LOCAL_BRICKS" == "true" ]] && { [[ "$host" == "$NODE" ]] || [[ "$host" == "localhost" ]] || [[ "$host" == "$resolved_ip" ]] || [[ "$host" == "$self_ip" ]]; }; then
+      local new="${LOCAL_BRICK_HOST}:$path"
       [[ "$new" != "$spec" ]] && log "Rewriting local brick host: $spec → $new"
       out+=( "$new" )
     else
@@ -194,10 +199,9 @@ rewrite_local_bricks() {
 
 run_with_retry() {
   local tries="$1" sleep_s="$2"; shift 2
-  local i
-  for i in $(seq 1 "$tries"); do
+  for n in $(seq 1 "$tries"); do
     if "$@"; then return 0; fi
-    warn "Command failed (try $i/$tries): $*"
+    warn "Retry $n/$tries: $*"
     sleep "$sleep_s"
   done
   return 1
@@ -220,7 +224,6 @@ if [[ "$AUTO_CREATE" == "true" ]]; then
       mapfile -t bricks_raw < <(yq -r ".volumes[$i].bricks[]? // empty" "$CONFIG")
       (( ${#bricks_raw[@]} )) || { warn "Volume '$name' ohne bricks – skip"; continue; }
 
-      # Safety + rewrite
       check_volume_safety "$i" "$name" "$vtype" "${bricks_raw[@]}"
       mapfile -t bricks < <(rewrite_local_bricks "${bricks_raw[@]}")
 
