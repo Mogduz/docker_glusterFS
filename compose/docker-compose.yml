@@ -1,11 +1,10 @@
-version: "3.9"
-
 services:
   gluster1:
     image: drezael/glusterfs:0.1
     container_name: gluster1
     hostname: gluster1
     restart: unless-stopped
+    privileged: true
     ulimits:
       nofile: 65536
     ports:
