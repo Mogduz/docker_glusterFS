@@ -46,3 +46,98 @@ is_mounted(){
   # best-effort check; in einem Container kann ein Bind-Mount als rootfs erscheinen
   test -w "$1"
 }
+
+# -------- YAML helpers (yq required) --------
+yaml_get_peers(){
+  local file="${1:-/gluster/etc/cluster.yml}"
+  [[ -s "$file" ]] || return 1
+  yq -r '(.cluster.peers // .peers // [])[]? // empty' "$file" 2>/dev/null || true
+}
+
+yaml_get_vol_names(){
+  local file="${1:-/gluster/etc/cluster.yml}"
+  [[ -s "$file" ]] || return 1
+  yq -r '(.cluster.volumes // .volumes // [])[].name // empty' "$file" 2>/dev/null || true
+}
+
+yaml_get_vol_field(){
+  local file="$1" ; local vname="$2" ; local field="$3"
+  yq -r "( .cluster.volumes // .volumes // [] )
+         | map(select(.name == \"$vname\")) | .[0].$field // empty" "$file" 2>/dev/null || true
+}
+
+yaml_get_vol_bricks(){
+  local file="$1" ; local vname="$2"
+  yq -r "( .cluster.volumes // .volumes // [] )
+         | map(select(.name == \"$vname\")) | .[0].bricks[]? // empty" "$file" 2>/dev/null || true
+}
+
+yaml_get_bricks_legacy(){
+  local file="${1:-/gluster/etc/cluster.yml}"
+  [[ -s "$file" ]] || return 1
+  yq -r '(.cluster.bricks // .bricks // [])[]? // empty' "$file" 2>/dev/null || true
+}
+
+# -------- Gluster helpers --------
+gluster_pool_has(){
+  local host="$1"
+  gluster pool list 2>/dev/null | awk 'NR>1 {print $3,$2}' | grep -E "(^|\\s)${host}(\\s|$)" -q
+}
+
+gluster_peer_probe(){
+  local host="$1"
+  if gluster_pool_has "$host"; then
+    log_ok "Peer bereits verbunden: $host"
+    return 0
+  fi
+  log_i "Peer probe: $host"
+  gluster peer probe "$host" >/dev/null 2>&1 || true
+}
+
+wait_peer_connected(){
+  local host="$1" ; local tries="${2:-60}" ; local sleep_s="${3:-1}"
+  for ((i=1; i<=tries; i++)); do
+    if gluster pool list 2>/dev/null | awk 'NR>1 {print $1,$2,$3}' | grep -E "\\s${host}\\s" | grep -qE '\bConnected\b'; then
+      log_ok "Peer connected: $host (Versuch $i)"
+      return 0
+    fi
+    sleep "$sleep_s"
+  done
+  log_w "Peer NICHT verbunden: $host"
+  return 1
+}
+
+volume_exists(){
+  local name="$1"
+  gluster volume info "$name" >/dev/null 2>&1
+}
+
+ensure_volume_started(){
+  local name="$1"
+  if ! gluster volume info "$name" | grep -q "Status: Started"; then
+    log_i "Starte Volume: $name"
+    gluster volume start "$name" >/dev/null 2>&1 || true
+  fi
+}
+
+set_volume_options(){
+  local name="$1" ; shift
+  # expects KEY=VALUE pairs in args
+  for kv in "$@"; do
+    local k="${kv%%=*}" ; local v="${kv#*=}"
+    log_i "Setze Option: $name $k=$v"
+    gluster volume set "$name" "$k" "$v" >/dev/null 2>&1 || true
+  done
+}
+
+# Build host:path brick from "host:path" or local "/path"
+normalize_brick(){
+  local spec="$1"
+  if [[ "$spec" == *:* ]]; then
+    echo "$spec"
+  else
+    # Pure path -> local host
+    local host="${REWRITE_LOCAL_BRICKS_TO:-$(hostname -s)}"
+    echo "${host}:${spec}"
+  fi
+}
