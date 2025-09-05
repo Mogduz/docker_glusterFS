@@ -12,6 +12,14 @@ ALLOW_SINGLE_BRICK="${ALLOW_SINGLE_BRICK:-false}"
 WAIT_TRIES="${WAIT_TRIES:-120}"
 WAIT_SLEEP="${WAIT_SLEEP:-1}"
 
+# ---- Single-run Lock, um doppelte Ausführung zu verhindern ----
+mkdir -p /run/gluster
+if ! mkdir /run/gluster/entry.lock 2>/dev/null; then
+  echo "Entrypoint läuft bereits – parke mich im Hintergrund."
+  while sleep 3600; do :; done
+fi
+trap 'rm -rf /run/gluster/entry.lock || true' EXIT
+
 echo "  GlusterFS Container Entrypoint"
 echo
 log_i "Node-Name            : $(hostname -s)"
@@ -56,18 +64,17 @@ else
   exit 97
 fi
 
-# ---- FIX: Korrektes Readiness-Warten (NICHT glusterd im Loop aufrufen) ----
+# ---- Readiness & Store-Datei abwarten ----
 if ! wait_for_glusterd "${WAIT_TRIES}" "${WAIT_SLEEP}"; then
   exit 98
 fi
+wait_for_glusterd_store 60 0.5 || true
 
 # ---------------- Auto-Management: Peers & Volumes ----------------
-
 REWRITE_LOCAL_BRICKS_TO="${REWRITE_LOCAL_BRICKS_TO:-127.0.0.1}"
 
 if [[ "${AUTO_PROBE_PEERS}" == "true" ]]; then
   section "Auto-Probe Peers (YAML/ENV)"
-  # Collect peers: YAML first, then ENV PEERS (space/comma-separated)
   peers=()
   while IFS= read -r p; do [[ -n "$p" ]] && peers+=("$p"); done < <(yaml_get_peers "${GLUSTER_CONFIG}" || true)
   if [[ -n "${PEERS:-}" ]]; then
@@ -113,26 +120,32 @@ if [[ "${AUTO_CREATE_VOLUMES}" == "true" ]]; then
         nbricks+=("$nb")
       done
 
-      # Preflight xattr capability on local bricks to provide actionable errors before create
+      # Preflight xattr & Leere Bricks prüfen
       preflight_ok=true
       for spec in "${nbricks[@]}"; do
         lp="$(brick_local_path "$spec")"
-        if ! check_brick_xattr "$lp"; then
-          preflight_ok=false
+        if [[ -n "$lp" ]]; then
+          if ! check_brick_xattr "$lp"; then preflight_ok=false; fi
+          if ! dir_is_effectively_empty "$lp"; then
+            log_e "Brick-Verzeichnis nicht leer: $lp (nur 'lost+found' ist erlaubt)."
+            preflight_ok=false
+          fi
         fi
       done
       if [[ "$preflight_ok" != "true" ]]; then
-        log_e "Abbruch Volume-Erstellung: xattr-Preflight fehlgeschlagen. Siehe obige Fehlerhinweise."
+        log_e "Abbruch Volume-Erstellung: Preflight fehlgeschlagen. Siehe obige Hinweise."
         exit 95
       fi
 
       if ! volume_exists "$VOL_NAME"; then
-        if [[ "${ALLOW_SINGLE_BRICK}" != "true" && "${#nbricks[@]}" -lt 2 ]]; then
-          log_e "Zu wenige Bricks (${#nbricks[@]}) für Volume $VOL_NAME und ALLOW_SINGLE_BRICK=false"
-          exit 96
+        create_cmd=(gluster volume create "$VOL_NAME" "${nbricks[@]}" force)
+        log_i "Erzeuge Volume: ${create_cmd[*]}"
+        if ! out="$("${create_cmd[@]}" 2>&1)"; then
+          log_e "Volume-Create fehlgeschlagen: $out"
+          echo "=== letzte 100 Zeilen glusterd.log ==="
+          tail -n 100 /var/log/glusterfs/glusterd.log 2>/dev/null || true
+          exit 94
         fi
-        log_i "Erzeuge Volume: $VOL_NAME (${#nbricks[@]} Bricks)"
-        gluster volume create "$VOL_NAME" "${nbricks[@]}" force >/dev/null 2>&1 || true
       fi
       ensure_volume_started "$VOL_NAME"
     fi
@@ -156,22 +169,25 @@ if [[ "${AUTO_CREATE_VOLUMES}" == "true" ]]; then
         nbricks+=("$nb")
       done
 
-      # Preflight for YAML-defined bricks
+      # Preflight (xattr + leer)
       preflight_ok=true
       for spec in "${nbricks[@]}"; do
         lp="$(brick_local_path "$spec")"
-        if ! check_brick_xattr "$lp"; then
-          preflight_ok=false
+        if [[ -n "$lp" ]]; then
+          if ! check_brick_xattr "$lp"; then preflight_ok=false; fi
+          if ! dir_is_effectively_empty "$lp"; then
+            log_e "Brick-Verzeichnis nicht leer: $lp (nur 'lost+found' ist erlaubt)."
+            preflight_ok=false
+          fi
         fi
       done
       if [[ "$preflight_ok" != "true" ]]; then
-        log_e "Abbruch Volume-Erstellung ($V): xattr-Preflight fehlgeschlagen."
+        log_e "Abbruch Volume-Erstellung ($V): Preflight fehlgeschlagen."
         exit 95
       fi
 
       if ! volume_exists "$V"; then
         build=(volume create "$V")
-        # layout flags
         case "${vtype}" in
           replicate|replica)
             if [[ -n "$replica" ]]; then build+=(replica "$replica"); fi ;;
@@ -185,8 +201,13 @@ if [[ "${AUTO_CREATE_VOLUMES}" == "true" ]]; then
         esac
         build+=("${nbricks[@]}")
         build+=(force)
-        log_i "Erzeuge Volume $V: ${build[*]}"
-        gluster "${build[@]}" >/dev/null 2>&1 || true
+        log_i "Erzeuge Volume $V: gluster ${build[*]}"
+        if ! out="$(gluster "${build[@]}" 2>&1)"; then
+          log_e "Volume-Create ($V) fehlgeschlagen: $out"
+          echo "=== letzte 100 Zeilen glusterd.log ==="
+          tail -n 100 /var/log/glusterfs/glusterd.log 2>/dev/null || true
+          exit 94
+        fi
       fi
       ensure_volume_started "$V"
 
