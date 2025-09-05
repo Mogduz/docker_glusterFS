@@ -24,7 +24,7 @@ services:
       # - PEERS=gluster1,gluster2
 
     volumes:
-      - /srv/gluster:/gluster
+      - ./gluster:/gluster
       - /data/gluster/vol1_brick:/gluster/bricks/vol1/brick
       - /data/gluster/vol2_brick:/gluster/bricks/vol2/brick
 
