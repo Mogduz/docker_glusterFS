@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Server + YAML-Tools
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      glusterfs-server acl attr procps yq jq \
+      glusterfs-server acl attr procps yq jq iproute2 \
  && rm -rf /var/lib/apt/lists/*
 
 # Defaults sichern & Symlinks auf /gluster setzen
@@ -37,17 +37,14 @@ EXPOSE 24007/tcp 24008/tcp 49152-49251/tcp
 # Einziger Persistenz-Mount: /gluster
 VOLUME ["/gluster"]
 
-
 # Copy modular scripts
 COPY ./src/scripts/ /opt/gluster-scripts/
 RUN chmod +x /opt/gluster-scripts/entrypoint.sh \
-    /opt/gluster-scripts/lib/*.sh \
-    /opt/gluster-scripts/steps/*.sh
+    /opt/gluster-scripts/lib/*.sh
 
-# Entrypoint
-
-
+# Healthcheck: glusterd läuft?
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 \
   CMD pgrep -x glusterd >/dev/null || exit 1
 
+# Entrypoint
 CMD ["/opt/gluster-scripts/entrypoint.sh"]
