@@ -61,7 +61,118 @@ if ! wait_for_glusterd "${WAIT_TRIES}" "${WAIT_SLEEP}"; then
   exit 98
 fi
 
-# Optional: Auto-Probe / Volumes hier (aus Fokus gelassen, um den Start zu entblocken)
+# ---------------- Auto-Management: Peers & Volumes ----------------
+
+REWRITE_LOCAL_BRICKS_TO="${REWRITE_LOCAL_BRICKS_TO:-127.0.0.1}"
+
+if [[ "${AUTO_PROBE_PEERS}" == "true" ]]; then
+  section "Auto-Probe Peers (YAML/ENV)"
+  # Collect peers: YAML first, then ENV PEERS (space/comma-separated)
+  peers=()
+  while IFS= read -r p; do [[ -n "$p" ]] && peers+=("$p"); done < <(yaml_get_peers "${GLUSTER_CONFIG}" || true)
+  if [[ -n "${PEERS:-}" ]]; then
+    IFS=', ' read -r -a env_peers <<< "${PEERS}"
+    peers+=("${env_peers[@]}")
+  fi
+  # De-duplicate
+  tmp=(); declare -A seen=()
+  for x in "${peers[@]}"; do [[ -z "${seen[$x]:-}" ]] && tmp+=("$x") && seen[$x]=1; done
+  peers=("${tmp[@]}")
+
+  for peer in "${peers[@]}"; do
+    [[ "$peer" == "$(hostname -s)" || "$peer" == "127.0.0.1" || "$peer" == "localhost" ]] && continue
+    gluster_peer_probe "$peer"
+    wait_peer_connected "$peer" 60 1 || true
+  done
+fi
+
+if [[ "${AUTO_CREATE_VOLUMES}" == "true" ]]; then
+  section "Auto-Manage Volumes (YAML/ENV)"
+  vol_names=()
+  while IFS= read -r v; do [[ -n "$v" ]] && vol_names+=("$v"); done < <(yaml_get_vol_names "${GLUSTER_CONFIG}" || true)
+
+  if [[ "${#vol_names[@]}" -eq 0 ]]; then
+    # Legacy single volume from bricks list
+    legacy_bricks=()
+    while IFS= read -r b; do [[ -n "$b" ]] && legacy_bricks+=("$b"); done < <(yaml_get_bricks_legacy "${GLUSTER_CONFIG}" || true)
+    if [[ -z "${BRICKS:-}" && "${#legacy_bricks[@]}" -eq 0 ]]; then
+      log_w "Keine Volumes und keine Bricks in YAML/ENV gefunden – überspringe Auto-Create."
+    else
+      VOL_NAME="${VOL_NAME:-gv0}"
+      bricks=()
+      if [[ -n "${BRICKS:-}" ]]; then
+        IFS=', ' read -r -a env_bricks <<< "${BRICKS}"
+        bricks=("${env_bricks[@]}")
+      else
+        bricks=("${legacy_bricks[@]}")
+      fi
+      # normalize bricks to host:path
+      nbricks=()
+      for b in "${bricks[@]}"; do
+        nb="$(normalize_brick "$b")"
+        nbricks+=("$nb")
+      done
+      if ! volume_exists "$VOL_NAME"; then
+        if [[ "${ALLOW_SINGLE_BRICK}" != "true" && "${#nbricks[@]}" -lt 2 ]]; then
+          log_e "Zu wenige Bricks (${#nbricks[@]}) für Volume $VOL_NAME und ALLOW_SINGLE_BRICK=false"
+          exit 96
+        fi
+        log_i "Erzeuge Volume: $VOL_NAME (${#nbricks[@]} Bricks)"
+        gluster volume create "$VOL_NAME" "${nbricks[@]}" force >/dev/null 2>&1 || true
+      fi
+      ensure_volume_started "$VOL_NAME"
+    fi
+  else
+    # Full YAML volumes
+    for V in "${vol_names[@]}"; do
+      vtype="$(yaml_get_vol_field "${GLUSTER_CONFIG}" "$V" type)"
+      replica="$(yaml_get_vol_field "${GLUSTER_CONFIG}" "$V" replica)"
+      dist="$(yaml_get_vol_field "${GLUSTER_CONFIG}" "$V" disperse)"
+      arbiter="$(yaml_get_vol_field "${GLUSTER_CONFIG}" "$V" arbiter)"
+      # bricks
+      bricks=()
+      while IFS= read -r b; do [[ -n "$b" ]] && bricks+=("$b"); done < <(yaml_get_vol_bricks "${GLUSTER_CONFIG}" "$V" || true)
+      if [[ "${#bricks[@]}" -eq 0 && -n "${BRICKS:-}" ]]; then
+        IFS=', ' read -r -a env_bricks <<< "${BRICKS}"
+        bricks=("${env_bricks[@]}")
+      fi
+      nbricks=()
+      for b in "${bricks[@]}"; do
+        nb="$(normalize_brick "$b")"
+        nbricks+=("$nb")
+      done
+      if ! volume_exists "$V"; then
+        build=(volume create "$V")
+        # layout flags
+        case "${vtype}" in
+          replicate|replica)
+            if [[ -n "$replica" ]]; then build+=(replica "$replica"); fi ;;
+          disperse|erasure|ec)
+            if [[ -n "$dist" ]]; then build+=(disperse-data "$dist"); fi ;;
+          arbiter)
+            if [[ -n "$replica" ]]; then build+=(replica "$replica" arbiter "${arbiter:-1}"); fi ;;
+          *)
+            : # distributed (default)
+            ;;
+        esac
+        build+=("${nbricks[@]}")
+        build+=(force)
+        log_i "Erzeuge Volume $V: ${build[*]}"
+        gluster "${build[@]}" >/dev/null 2>&1 || true
+      fi
+      ensure_volume_started "$V"
+
+      # options
+      if command -v yq >/dev/null 2>&1; then
+        mapfile -t kvs < <(yq -r "( .cluster.volumes // .volumes // [] )
+          | map(select(.name == \"$V\")) | .[0].options | to_entries[]? | \"\(.key)=\(.value)\"" "${GLUSTER_CONFIG}" 2>/dev/null || true)
+        if [[ "${#kvs[@]}" -gt 0 ]]; then
+          set_volume_options "$V" "${kvs[@]}"
+        fi
+      fi
+    done
+  fi
+fi
 
 # Im Vordergrund bleiben: Log folgen (falls vorhanden)
 if [[ -f /var/log/glusterfs/glusterd.log ]]; then
