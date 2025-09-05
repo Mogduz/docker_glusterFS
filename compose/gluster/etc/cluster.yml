@@ -1,27 +1,42 @@
-# Manager-Node steuert Create/Set/Start (Race-Schutz)
-manager_node: gluster1
+# cluster.yml
+cluster:
+  manager: gluster1
 
-# Peers im Cluster – hier nur Self (Single-Node-Demo)
-peers:
-  - gluster1
+  # Aktuell nur ein Node. Sobald du weitere Knoten hast, ergänze sie hier.
+  peers:
+    - gluster1
+    # - gluster2
+    # - gluster3
 
-# Lokale Brick-Pfade (MÜSSEN als Bind-Mounts vorhanden sein)
-local_bricks:
-  - /gluster/bricks/vol1/brick
-  - /gluster/bricks/vol2/brick
+  # Moderne Struktur: Liste von Volumes
+  volumes:
+    - name: gv0
+      # Layout:
+      #   replicate  -> 'replica' angeben (hier 2)
+      #   arbiter    -> 'replica: 3' UND 'arbiter: 1'
+      #   disperse   -> 'disperse' (disperse-data N)
+      #   distributed -> keine Zusatz-Angaben
+      type: replicate
+      replica: 2
 
-# Volumes
-volumes:
-  - name: gv0
-    type: distribute            # keine Redundanz (nur Demo). Für Schutz: replicate/disperse nutzen.
-    transport: tcp
-    bricks:
-      # Auf Single-Node wird 'gluster1' vom Entrypoint automatisch nach 127.0.0.1 umgeschrieben
-      - gluster1:/gluster/bricks/vol1/brick
-      - gluster1:/gluster/bricks/vol2/brick
-    options:
-      nfs.disable: "on"
-      performance.client-io-threads: "on"
-      # Optional für reines internes Netz:
-      # transport.address-family: "inet"
-      # auth.allow: "10.0.1.*"
+      # Bricks:
+      # Lokale Pfade werden im Entrypoint automatisch zu 127.0.0.1:<pfad> normalisiert.
+      # Für Mehrknotenbetrieb: host:/pfad verwenden (siehe Beispiele darunter).
+      bricks:
+        - /gluster/bricks/vol1/brick
+        - /gluster/bricks/vol2/brick
+        # Beispiel für 2 Nodes (statt obiger Zeilen):
+        # - gluster1:/gluster/bricks/vol1/brick
+        # - gluster2:/gluster/bricks/vol1/brick
+        # Beispiel für Arbiter-Replica 3:
+        # - gluster1:/gluster/bricks/vol1/brick
+        # - gluster2:/gluster/bricks/vol1/brick
+        # - gluster3:/gluster/bricks/vol1/brick
+
+      # Sinnvolle Standard-Optionen; bei Bedarf ergänzen/anpassen
+      options:
+        nfs.disable: "on"
+        performance.client-io-threads: "on"
+        # cluster.self-heal-daemon: "on"      # (optional; bei Replica sinnvoll)
+        # performance.readdir-ahead: "on"     # (optional)
+        # network.ping-timeout: "10"          # (optional)
