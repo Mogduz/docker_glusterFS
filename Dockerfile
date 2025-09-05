@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Server + YAML-Tools
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      glusterfs-server acl attr procps yq jq iproute2 \
+      glusterfs-server glusterfs-client acl attr procps yq jq iproute2 \
  && rm -rf /var/lib/apt/lists/*
 
 # Defaults sichern & Symlinks auf /gluster setzen
