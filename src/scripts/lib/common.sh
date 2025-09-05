@@ -36,6 +36,17 @@ wait_for_glusterd(){
   return 1
 }
 
+# Warten bis die Gluster-„Store“-Datei existiert (erster Start erzeugt diese)
+wait_for_glusterd_store(){
+  local tries="${1:-60}" sleep_s="${2:-0.5}"
+  for ((i=1;i<=tries;i++)); do
+    [[ -s /var/lib/glusterd/glusterd.info ]] && { log_ok "glusterd.info vorhanden"; return 0; }
+    sleep "${sleep_s}"
+  done
+  log_w "glusterd.info nach $((tries*sleep_s))s noch nicht vorhanden – fahre fort."
+  return 0
+}
+
 require_dir(){
   local d="$1"
   [[ -d "$d" ]] || { mkdir -p "$d"; }
@@ -157,6 +168,23 @@ brick_local_path(){
   else
     echo "$spec"
   fi
+}
+
+# Directory (bis auf lost+found) leer?
+dir_is_effectively_empty(){
+  local p="$1"
+  [[ -d "$p" ]] || return 2
+  shopt -s dotglob nullglob
+  local entries=("$p"/*)
+  shopt -u dotglob
+  local count=0
+  for e in "${entries[@]}"; do
+    [[ ! -e "$e" ]] && continue
+    local b; b="$(basename "$e")"
+    [[ "$b" == "lost+found" ]] && continue
+    count=$((count+1))
+  done
+  [[ $count -eq 0 ]]
 }
 
 # Preflight: dürfen wir trusted.*-xattr auf dem Brick-Wurzelpfad setzen?
