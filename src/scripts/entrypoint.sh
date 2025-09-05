@@ -112,6 +112,20 @@ if [[ "${AUTO_CREATE_VOLUMES}" == "true" ]]; then
         nb="$(normalize_brick "$b")"
         nbricks+=("$nb")
       done
+
+      # Preflight xattr capability on local bricks to provide actionable errors before create
+      preflight_ok=true
+      for spec in "${nbricks[@]}"; do
+        lp="$(brick_local_path "$spec")"
+        if ! check_brick_xattr "$lp"; then
+          preflight_ok=false
+        fi
+      done
+      if [[ "$preflight_ok" != "true" ]]; then
+        log_e "Abbruch Volume-Erstellung: xattr-Preflight fehlgeschlagen. Siehe obige Fehlerhinweise."
+        exit 95
+      fi
+
       if ! volume_exists "$VOL_NAME"; then
         if [[ "${ALLOW_SINGLE_BRICK}" != "true" && "${#nbricks[@]}" -lt 2 ]]; then
           log_e "Zu wenige Bricks (${#nbricks[@]}) für Volume $VOL_NAME und ALLOW_SINGLE_BRICK=false"
@@ -141,6 +155,20 @@ if [[ "${AUTO_CREATE_VOLUMES}" == "true" ]]; then
         nb="$(normalize_brick "$b")"
         nbricks+=("$nb")
       done
+
+      # Preflight for YAML-defined bricks
+      preflight_ok=true
+      for spec in "${nbricks[@]}"; do
+        lp="$(brick_local_path "$spec")"
+        if ! check_brick_xattr "$lp"; then
+          preflight_ok=false
+        fi
+      done
+      if [[ "$preflight_ok" != "true" ]]; then
+        log_e "Abbruch Volume-Erstellung ($V): xattr-Preflight fehlgeschlagen."
+        exit 95
+      fi
+
       if ! volume_exists "$V"; then
         build=(volume create "$V")
         # layout flags
