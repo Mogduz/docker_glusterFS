@@ -36,7 +36,16 @@ require_dir "${GLUSTER_ROOT}/glusterd"
 require_dir "${GLUSTER_ROOT}/logs"
 require_dir "${GLUSTER_ROOT}/bricks"
 
-# Starte glusterd (daemonisiert standardmäßig)
+# Seed default config into /gluster/etc on first run (glusterd requires glusterd.vol at least)
+if [[ ! -s /etc/glusterfs/glusterd.vol ]]; then
+  log_w "Keine glusterd.vol gefunden – seed Defaults nach /etc/glusterfs (persistiert nach /gluster/etc)"
+  cp -a /opt/glusterfs-defaults/. /etc/glusterfs/
+fi
+
+# Ensure runtime dir for pid/socket exists
+mkdir -p /run/gluster /var/run/gluster
+
+# Starte glusterd (Management-Daemon)
 section "Starte glusterd (Management-Daemon)"
 glusterd
 sleep 0.5
