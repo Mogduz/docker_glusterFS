@@ -7,16 +7,15 @@ log_ok(){ echo "$(ts) OK    $*"; }
 log_w() { echo "$(ts) WARN  $*"; }
 log_e() { echo "$(ts) ERROR $*" >&2; }
 
-# Pretty section header
+# Abschnitts-Header
 section(){ echo -e "\n==> $*"; }
 
-# Wait until glusterd answers to CLI
+# ----- Readiness für glusterd (per CLI prüfen, nicht glusterd im Loop starten!)
 wait_for_glusterd(){
   local tries="${1:-120}"
   local sleep_s="${2:-1}"
   section "Warte auf Readiness von glusterd"
   for ((i=1; i<=tries; i++)); do
-    # FIX: Nicht 'glusterd' im Loop starten! Stattdessen CLI befragen:
     if gluster --mode=script --timeout=5 volume list >/dev/null 2>&1; then
       log_ok "glusterd ist bereit (Versuch $i)"
       return 0
@@ -43,11 +42,11 @@ require_dir(){
 }
 
 is_mounted(){
-  # best-effort check; in einem Container kann ein Bind-Mount als rootfs erscheinen
+  # best-effort; in Containern erscheinen Binds teils als rootfs – Schreibhaken genügt
   test -w "$1"
 }
 
-# -------- YAML helpers (yq required) --------
+# ====================== YAML-Helper (yq) ======================
 yaml_get_peers(){
   local file="${1:-/gluster/etc/cluster.yml}"
   [[ -s "$file" ]] || return 1
@@ -78,10 +77,11 @@ yaml_get_bricks_legacy(){
   yq -r '(.cluster.bricks // .bricks // [])[]? // empty' "$file" 2>/dev/null || true
 }
 
-# -------- Gluster helpers --------
+# ====================== Gluster-Helper ======================
 gluster_pool_has(){
   local host="$1"
-  gluster pool list 2>/dev/null | awk 'NR>1 {print $3,$2}' | grep -E "(^|\\s)${host}(\\s|$)" -q
+  # Suche Host in Pool-Liste (Hostname-Spalte)
+  gluster pool list 2>/dev/null | awk 'NR>1 {print $3,$2}' | grep -E "(^|[[:space:]])${host}([[:space:]]|$)" -q
 }
 
 gluster_peer_probe(){
@@ -97,7 +97,10 @@ gluster_peer_probe(){
 wait_peer_connected(){
   local host="$1" ; local tries="${2:-60}" ; local sleep_s="${3:-1}"
   for ((i=1; i<=tries; i++)); do
-    if gluster pool list 2>/dev/null | awk 'NR>1 {print $1,$2,$3}' | grep -E "\\s${host}\\s" | grep -qE '\bConnected\b'; then
+    if gluster pool list 2>/dev/null \
+        | awk 'NR>1 {print $1,$2,$3}' \
+        | grep -E "\s${host}\s" \
+        | grep -qE '\bConnected\b'; then
       log_ok "Peer connected: $host (Versuch $i)"
       return 0
     fi
@@ -114,7 +117,7 @@ volume_exists(){
 
 ensure_volume_started(){
   local name="$1"
-  if ! gluster volume info "$name" | grep -q "Status: Started"; then
+  if ! gluster volume info "$name" 2>/dev/null | grep -q "Status: Started"; then
     log_i "Starte Volume: $name"
     gluster volume start "$name" >/dev/null 2>&1 || true
   fi
@@ -122,7 +125,7 @@ ensure_volume_started(){
 
 set_volume_options(){
   local name="$1" ; shift
-  # expects KEY=VALUE pairs in args
+  # erwartet KEY=VALUE Paare
   for kv in "$@"; do
     local k="${kv%%=*}" ; local v="${kv#*=}"
     log_i "Setze Option: $name $k=$v"
@@ -130,19 +133,18 @@ set_volume_options(){
   done
 }
 
-# Build host:path brick from "host:path" or local "/path"
+# host:path ausgeben; reine Pfade werden zu <REWRITE_LOCAL_BRICKS_TO>:<pfad>
 normalize_brick(){
   local spec="$1"
   if [[ "$spec" == *:* ]]; then
     echo "$spec"
   else
-    # Pure path -> local host
     local host="${REWRITE_LOCAL_BRICKS_TO:-$(hostname -s)}"
     echo "${host}:${spec}"
   fi
 }
 
-# Extract local path from a brick spec if it's local; else empty
+# Lokalen Pfad extrahieren (nur wenn Brick lokal ist), sonst leer
 brick_local_path(){
   local spec="$1"
   if [[ "$spec" == *:* ]]; then
@@ -157,10 +159,10 @@ brick_local_path(){
   fi
 }
 
-# Preflight: can we set trusted.* xattrs on the brick root?
+# Preflight: dürfen wir trusted.*-xattr auf dem Brick-Wurzelpfad setzen?
 check_brick_xattr(){
   local path="$1"
-  if [[ -z "$path" ]]; then return 0; fi  # skip non-local
+  if [[ -z "$path" ]]; then return 0; fi  # nicht-lokale Bricks überspringen
   if [[ ! -d "$path" ]]; then
     log_e "Brick-Pfad existiert nicht: $path"
     return 2
@@ -171,11 +173,17 @@ check_brick_xattr(){
     setfattr -x "$key" "$path" >/dev/null 2>&1 || true
     return 0
   else
-    # Try to detect error cause
     local err
     err="$(setfattr -n "$key" -v "1" "$path" 2>&1 || true)"
     if echo "$err" | grep -qi "Operation not permitted"; then
-      log_e "Kann trusted.* xattr NICHT setzen (EPERM) auf $path. Vermutlich fehlen Container-Capabilities (CAP_SYS_ADMIN) oder AppArmor/Seccomp blockiert."
-      log_e "Lösung: docker run/compose mit 'cap_add: [\"SYS_ADMIN\"]' ODER 'privileged: true' sowie ggf. 'security_opt: [\"apparmor:unconfined\"]' starten."
+      log_e "Kann trusted.* xattr NICHT setzen (EPERM) auf $path."
+      log_e "→ Compose/Run ergänzen: cap_add: [\"SYS_ADMIN\"] ODER privileged: true; ggf. security_opt: [\"apparmor:unconfined\"]."
     elif echo "$err" | grep -qi "Operation not supported"; then
-      log_e "xattr wir_
+      log_e "xattr wird vom Host-FS NICHT unterstützt auf $path."
+      log_e "→ Stelle sicher, dass ext4/xfs mit user_xattr,acl gemountet ist."
+    else
+      log_e "Setzen von xattr auf $path fehlgeschlagen: $err"
+    fi
+    return 1
+  fi
+}
