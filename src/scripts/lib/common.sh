@@ -141,3 +141,41 @@ normalize_brick(){
     echo "${host}:${spec}"
   fi
 }
+
+# Extract local path from a brick spec if it's local; else empty
+brick_local_path(){
+  local spec="$1"
+  if [[ "$spec" == *:* ]]; then
+    local host="${spec%%:*}"
+    local path="${spec#*:}"
+    case "$host" in
+      127.0.0.1|localhost|$(hostname -s)) echo "$path" ;;
+      *) echo "" ;;
+    esac
+  else
+    echo "$spec"
+  fi
+}
+
+# Preflight: can we set trusted.* xattrs on the brick root?
+check_brick_xattr(){
+  local path="$1"
+  if [[ -z "$path" ]]; then return 0; fi  # skip non-local
+  if [[ ! -d "$path" ]]; then
+    log_e "Brick-Pfad existiert nicht: $path"
+    return 2
+  fi
+  local key="trusted.glfs.preflight"
+  if setfattr -n "$key" -v "1" "$path" 2>/dev/null; then
+    getfattr -n "$key" "$path" >/dev/null 2>&1 || true
+    setfattr -x "$key" "$path" >/dev/null 2>&1 || true
+    return 0
+  else
+    # Try to detect error cause
+    local err
+    err="$(setfattr -n "$key" -v "1" "$path" 2>&1 || true)"
+    if echo "$err" | grep -qi "Operation not permitted"; then
+      log_e "Kann trusted.* xattr NICHT setzen (EPERM) auf $path. Vermutlich fehlen Container-Capabilities (CAP_SYS_ADMIN) oder AppArmor/Seccomp blockiert."
+      log_e "Lösung: docker run/compose mit 'cap_add: [\"SYS_ADMIN\"]' ODER 'privileged: true' sowie ggf. 'security_opt: [\"apparmor:unconfined\"]' starten."
+    elif echo "$err" | grep -qi "Operation not supported"; then
+      log_e "xattr wir_
