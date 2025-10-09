@@ -25,6 +25,18 @@ except Exception as e:
     sys.exit(90)
 
 CONFIG_PATH_DEFAULT = "/etc/gluster-container/config.yaml"
+# PATH erweitern, falls sbin-Verzeichnisse fehlen
+os.environ['PATH'] = os.environ.get('PATH', '') or '/usr/sbin:/usr/bin:/sbin:/bin'
+for _p in ['/usr/local/sbin', '/usr/sbin', '/sbin']:
+    if _p not in os.environ['PATH'].split(':'):
+        os.environ['PATH'] += (':' + _p)
+
+
+# PATH erweitern, falls sbin-Verzeichnisse fehlen
+os.environ['PATH'] = os.environ.get('PATH', '') or '/usr/sbin:/usr/bin:/sbin:/bin'
+for _p in ['/usr/local/sbin', '/usr/sbin', '/sbin']:
+    if _p not in os.environ['PATH'].split(':'):
+        os.environ['PATH'] += (':' + _p)
 
 # ----------------------------- Logging -----------------------------
 LEVELS = {"DEBUG": 10, "INFO": 20, "WARN": 30, "ERROR": 40}
@@ -117,10 +129,33 @@ def _spawn(cmd: str) -> subprocess.Popen:
 def start_glusterd() -> subprocess.Popen:
     """Robustes Starten: versuche -N, dann --no-daemon, dann ohne Flag. Logge --help bei Fehler."""
     require("glusterd")
-    candidates = ["glusterd -N", "glusterd --no-daemon", "glusterd"]
+    override = os.environ.get('GLUSTERD_BIN','').strip()
+candidates_raw = []
+if override:
+    candidates_raw += [f"{override} -N", f"{override} --no-daemon", f"{override}"]
+candidates_raw += [
+    '/usr/sbin/glusterd -N', '/usr/sbin/glusterd --no-daemon', '/usr/sbin/glusterd',
+    '/usr/local/sbin/glusterd -N', '/usr/local/sbin/glusterd --no-daemon', '/usr/local/sbin/glusterd',
+    'glusterd -N', 'glusterd --no-daemon', 'glusterd'
+]
+def _bin_exists(cmd):
+    b = cmd.split()[0]
+    return (os.path.isabs(b) and os.path.isfile(b) and os.access(b, os.X_OK)) or which(b)
+candidates = [c for c in candidates_raw if _bin_exists(c)]
+if not candidates:
+    die(28, 'Kein glusterd-Binary gefunden. Ist glusterfs-server installiert?', path=os.environ.get('PATH'))
+
     last_err = None
     for cmd in candidates:
         p = _spawn(cmd)
+try:
+    help_out = subprocess.run(cmd.split()[0] + ' --help', shell=True, text=True, capture_output=True)
+    help_txt = (help_out.stdout or help_out.stderr or '')
+    if 'volfile-server' in help_txt and 'MOUNT-POINT' in help_txt:
+        die(27, 'Falsches glusterd-Binary (Client statt Daemon). Prüfe Pakete/PATH.', used_binary=cmd.split()[0])
+except Exception:
+    pass
+
         # Wenn der Prozess sofort stirbt, probiere die nächste Variante
         time.sleep(1.0)
         if p.poll() is None:
