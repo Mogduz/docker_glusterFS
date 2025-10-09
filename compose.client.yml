@@ -1,3 +1,6 @@
+# Compose file for running a Gluster client container.
+# It mounts the remote Gluster volume *inside* the container and shares the mount to the host path
+# via a bind mount with propagation=rshared.
 version: "3.9"
 # Run on any host that should "proxy-mount" the Gluster volume to the host path.
 services:
@@ -10,10 +13,13 @@ services:
         source: /mnt/glusterFS
         target: /mnt/glusterFS
         bind:
+# Share mount events with the host so container mounts appear on host
           propagation: rshared
       - ./examples/config.client.yaml:/etc/gluster-container/config.yaml:ro
+# FUSE device is required for client mounts
     devices:
       - /dev/fuse:/dev/fuse
+# SYS_ADMIN capability is required to perform FUSE mounts
     cap_add: ["SYS_ADMIN"]
     security_opt:
       - apparmor:unconfined
