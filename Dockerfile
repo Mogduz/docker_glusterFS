@@ -1,3 +1,17 @@
+# -----------------------------------------------------------------------------
+# GlusterFS Hybrid Image (Ubuntu 24.04)
+# This Dockerfile builds a single image that can act as:
+#   - a Gluster **server** (runs glusterd, expects host network and brick bind-mounts),
+#   - a **server+bootstrap** node (idempotently probes peers and creates the volume),
+#   - a **client** (performs FUSE mounts inside the container and shares them to the host),
+#   - or a **noop** container for debugging.
+#
+# Design notes:
+# - All Gluster state is persisted on the *host* via bind-mounts. Rebuild/redeploy
+#   containers without losing data.
+# - Server containers should use `network_mode: host` for proper port handling.
+# - Health checks are included via scripts/healthcheck.sh.
+# -----------------------------------------------------------------------------
 # glusterfs-hybrid: Ubuntu 24.04 based GlusterFS server/client hybrid
 # Roles: server | server+bootstrap | client | noop
 FROM ubuntu:24.04
