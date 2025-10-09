@@ -1,7 +1,12 @@
+# Example configuration: config.server.yaml
+# Copy and adapt these values to match your environment.
+# This file is read by /usr/local/bin/entrypoint.py inside the container.
 # examples/config.server.yaml
 # Start a Gluster server node (no bootstrap). Use same image & config pattern on each node.
+# Role for this container: server | server+bootstrap | client | noop
 role: "server"
 node:
   hostname: "gfs1"
+# Brick export paths (host:container or absolute when bootstrapping)
 bricks:
   - path: "/bricks/brick1/brick"   # bind host /data/brick1 -> /bricks/brick1
