@@ -1,6 +1,11 @@
+# Build/publish variables (used by CI or by your local Makefile).
+# Adjust tags and the push flag to control publishing.
+# Repository/image name base
 name: glusterfs
+# Tags to build/publish
 tags:
   - 0.1
   - latest
   - testing
+# Whether to push to registry by default
 push: True
