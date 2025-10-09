@@ -1,0 +1,21 @@
+version: "3.9"
+# Run on any host that should "proxy-mount" the Gluster volume to the host path.
+services:
+  gluster-client:
+    image: ghcr.io/yourorg/glusterfs-hybrid:ubuntu24
+    container_name: gluster-client
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /mnt/glusterFS
+        target: /mnt/glusterFS
+        bind:
+          propagation: rshared
+      - ./examples/config.client.yaml:/etc/gluster-container/config.yaml:ro
+    devices:
+      - /dev/fuse:/dev/fuse
+    cap_add: ["SYS_ADMIN"]
+    security_opt:
+      - apparmor:unconfined
+    environment:
+      - TZ=Europe/Berlin
