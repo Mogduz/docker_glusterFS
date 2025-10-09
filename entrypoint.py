@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """
-GlusterFS hybrid container entrypoint (diagnostisch, robust gegenüber glusterd-Flag-Varianten).
+GlusterFS hybrid container entrypoint (diagnostisch & robust).
 
 Rollen: server | server+bootstrap | client | noop
-Siehe README im Dockerfile. Dieses Skript erzeugt ausführliche Logs und bricht mit
-sinnvollen Exit-Codes + Ursachenbeschreibung ab.
 """
 from __future__ import annotations
 
@@ -16,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+import shlex
 from datetime import datetime, timezone
 
 try:
@@ -25,12 +24,6 @@ except Exception as e:
     sys.exit(90)
 
 CONFIG_PATH_DEFAULT = "/etc/gluster-container/config.yaml"
-# PATH erweitern, falls sbin-Verzeichnisse fehlen
-os.environ['PATH'] = os.environ.get('PATH', '') or '/usr/sbin:/usr/bin:/sbin:/bin'
-for _p in ['/usr/local/sbin', '/usr/sbin', '/sbin']:
-    if _p not in os.environ['PATH'].split(':'):
-        os.environ['PATH'] += (':' + _p)
-
 
 # PATH erweitern, falls sbin-Verzeichnisse fehlen
 os.environ['PATH'] = os.environ.get('PATH', '') or '/usr/sbin:/usr/bin:/sbin:/bin'
@@ -45,10 +38,9 @@ LOG_FORMAT = os.environ.get("LOG_FORMAT", "text").lower()
 DRY_RUN = os.environ.get("DRY_RUN", "0") in ("1", "true", "yes", "on")
 
 stop_event = threading.Event()
-child_procs = []  # type: list[subprocess.Popen]
+child_procs: list[subprocess.Popen] = []
 
 def _ts() -> str:
-    # timezone-aware UTC (vermeidet DeprecationWarning)
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 def log(level: str, msg: str, **fields):
@@ -96,7 +88,7 @@ def run(cmd: str, check: bool = True, timeout: int | None = None) -> subprocess.
     return cp
 
 def is_mounted(target: str) -> bool:
-    cp = subprocess.run(f"mountpoint -q '{target.replace("'", "'\\''")}'", shell=True)
+    cp = subprocess.run(f"mountpoint -q {shlex.quote(target)}", shell=True)
     return cp.returncode == 0
 
 def ensure_dir(path: str):
@@ -117,7 +109,6 @@ def load_config(path: str) -> dict:
 
 # ----------------------------- Role logic -----------------------------
 def _spawn(cmd: str) -> subprocess.Popen:
-    """Starte einen Prozess, leite stdout/stderr zum Container-Log um (kein capture)."""
     if DRY_RUN:
         log("INFO", "DRY_RUN: würde Prozess starten", cmd=cmd)
         return subprocess.Popen(["/bin/sh", "-c", "sleep 3600"])
@@ -127,45 +118,46 @@ def _spawn(cmd: str) -> subprocess.Popen:
     return p
 
 def start_glusterd() -> subprocess.Popen:
-    """Robustes Starten: versuche -N, dann --no-daemon, dann ohne Flag. Logge --help bei Fehler."""
-    require("glusterd")
+    """Robustes Starten: probiere -N, --no-daemon, blank; respektiere GLUSTERD_BIN; prüfe falsche Binaries."""
+    require("sh")
     override = os.environ.get('GLUSTERD_BIN','').strip()
-candidates_raw = []
-if override:
-    candidates_raw += [f"{override} -N", f"{override} --no-daemon", f"{override}"]
-candidates_raw += [
-    '/usr/sbin/glusterd -N', '/usr/sbin/glusterd --no-daemon', '/usr/sbin/glusterd',
-    '/usr/local/sbin/glusterd -N', '/usr/local/sbin/glusterd --no-daemon', '/usr/local/sbin/glusterd',
-    'glusterd -N', 'glusterd --no-daemon', 'glusterd'
-]
-def _bin_exists(cmd):
-    b = cmd.split()[0]
-    return (os.path.isabs(b) and os.path.isfile(b) and os.access(b, os.X_OK)) or which(b)
-candidates = [c for c in candidates_raw if _bin_exists(c)]
-if not candidates:
-    die(28, 'Kein glusterd-Binary gefunden. Ist glusterfs-server installiert?', path=os.environ.get('PATH'))
+    candidates_raw: list[str] = []
+    if override:
+        candidates_raw += [f"{override} -N", f"{override} --no-daemon", f"{override}"]
+    candidates_raw += [
+        '/usr/sbin/glusterd -N', '/usr/sbin/glusterd --no-daemon', '/usr/sbin/glusterd',
+        '/usr/local/sbin/glusterd -N', '/usr/local/sbin/glusterd --no-daemon', '/usr/local/sbin/glusterd',
+        'glusterd -N', 'glusterd --no-daemon', 'glusterd'
+    ]
+    def _bin_exists(cmd: str) -> bool:
+        b = cmd.split()[0]
+        return (os.path.isabs(b) and os.path.isfile(b) and os.access(b, os.X_OK)) or which(b)
+    candidates = [c for c in candidates_raw if _bin_exists(c)]
+    if not candidates:
+        die(28, 'Kein glusterd-Binary gefunden. Ist glusterfs-server installiert?', path=os.environ.get('PATH'))
 
     last_err = None
     for cmd in candidates:
         p = _spawn(cmd)
-try:
-    help_out = subprocess.run(cmd.split()[0] + ' --help', shell=True, text=True, capture_output=True)
-    help_txt = (help_out.stdout or help_out.stderr or '')
-    if 'volfile-server' in help_txt and 'MOUNT-POINT' in help_txt:
-        die(27, 'Falsches glusterd-Binary (Client statt Daemon). Prüfe Pakete/PATH.', used_binary=cmd.split()[0])
-except Exception:
-    pass
-
-        # Wenn der Prozess sofort stirbt, probiere die nächste Variante
+        # Kurz warten: stirbt der Prozess sofort, nächste Variante probieren
         time.sleep(1.0)
         if p.poll() is None:
+            # Sanity-Check gegen verkleideten Client
+            try:
+                help_out = subprocess.run(cmd.split()[0] + ' --help', shell=True, text=True, capture_output=True)
+                help_txt = (help_out.stdout or help_out.stderr or '')
+                if 'volfile-server' in help_txt and 'MOUNT-POINT' in help_txt:
+                    die(27, 'Falsches glusterd-Binary (Client statt Daemon). Prüfe Pakete/PATH.', used_binary=cmd.split()[0])
+            except Exception:
+                pass
             log("INFO", "glusterd läuft", cmd=cmd, pid=p.pid)
             return p
         else:
             rc = p.returncode
             try:
-                help_out = subprocess.run("glusterd --help", shell=True, text=True, capture_output=True)
-                log("WARN", "glusterd Variante fehlgeschlagen", cmd=cmd, rc=rc, help=(help_out.stdout or help_out.stderr or "").splitlines()[:5])
+                help_out = subprocess.run(cmd.split()[0] + ' --help', shell=True, text=True, capture_output=True)
+                sample_help = (help_out.stdout or help_out.stderr or "").splitlines()[:5]
+                log("WARN", "glusterd Variante fehlgeschlagen", cmd=cmd, rc=rc, help=sample_help)
             except Exception:
                 log("WARN", "glusterd Variante fehlgeschlagen (kein --help verfügbar?)", cmd=cmd, rc=rc)
             last_err = rc
@@ -243,11 +235,11 @@ def client_mounts(cfg: dict):
         if is_mounted(target):
             log("INFO", "Bereits gemountet", target=target)
             continue
-        cmd = f"mount -t glusterfs {remote} '{target.replace("'", "'\\''")}'"
+        base = f"mount -t glusterfs {remote} {shlex.quote(target)}"
         if opts.strip():
-            cmd = f"mount -t glusterfs -o {opts} {remote} '{target.replace("'", "'\\''")}'"
+            base = f"mount -t glusterfs -o {opts} {remote} {shlex.quote(target)}"
         try:
-            run(cmd, check=True)
+            run(base, check=True)
             log("INFO", "Gemountet", remote=remote, target=target)
         except subprocess.CalledProcessError as e:
             die(41, "Mount fehlgeschlagen", remote=remote, target=target, rc=e.returncode)
@@ -258,8 +250,9 @@ def client_unmounts(cfg: dict):
         target = m.get("target") or "/mnt/gluster"
         if is_mounted(target):
             log("INFO", "Unmount", target=target)
-            run(f"umount '{target.replace("'", "'\\''")}' || umount -l '{target.replace("'", "'\\''")}'", check=False)
+            run(f"umount {shlex.quote(target)} || umount -l {shlex.quote(target)}", check=False)
 
+# ----------------------------- Signal handling -----------------------------
 def _handle_stop(signum, frame):
     log("INFO", "Signal empfangen, stoppe...", signal=signum)
     stop_event.set()
