@@ -1,13 +1,26 @@
 #!/usr/bin/env python3
+"""GlusterFS hybrid container entrypoint.
+
+Roles:
+- server: runs glusterd and keeps it in the foreground.
+- server+bootstrap: additionally probes peers and creates the volume idempotently.
+- client: performs FUSE mounts defined in the YAML config and keeps them alive; unmounts on shutdown.
+- noop: does nothing (useful for testing the image).
+
+Configuration is read from CONFIG_PATH (default: /etc/gluster-container/config.yaml).
+This script aims to be idempotent and safe to restart.
+"""
 import os, sys, time, subprocess, yaml, signal, atexit, threading
 
 CONFIG_PATH_DEFAULT = "/etc/gluster-container/config.yaml"
 stop_event = threading.Event()
 
 def log(msg):
+    """Lightweight logger that prints a message with flush=True."""
     print(msg, flush=True)
 
 def sh(cmd, check=True, capture=False):
+    """Run a shell command. Optionally capture output and raise on non-zero exit if check=True."""
     if capture:
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
     else:
@@ -20,13 +33,16 @@ def sh(cmd, check=True, capture=False):
     return p
 
 def is_mounted(path):
+    """Function logic; see inline comments for details."""
     return subprocess.run(f"mountpoint -q {path}", shell=True).returncode == 0
 
 def start_glusterd_foreground():
-    # Start glusterd in foreground (-N) so tini can manage it
-    return subprocess.Popen(["/usr/sbin/glusterd","-N"], stdout=sys.stdout, stderr=sys.stderr)
+    """Function logic; see inline comments for details."""
+    # Start glusterd in foreground (-N) so tini can manage it  # run glusterd in the foreground so Docker can supervise it
+    return subprocess.Popen(["/usr/sbin/glusterd","-N"], stdout=sys.stdout, stderr=sys.stderr)  # run glusterd in the foreground so Docker can supervise it
 
 def wait_glusterd(timeout=60):
+    """Function logic; see inline comments for details."""
     # Wait until gluster CLI works
     for _ in range(timeout):
         if subprocess.run("gluster --version", shell=True).returncode == 0:
@@ -35,6 +51,7 @@ def wait_glusterd(timeout=60):
     return False
 
 def cluster_init(volume_cfg):
+    """Idempotently probe peers and create the Gluster volume using the provided config."""
     # Probe peers based on hostnames extracted from brick definitions
     bricks = volume_cfg.get("bricks") or []
     hosts = sorted({b.split(":")[0] for b in bricks if ":" in b})
@@ -72,10 +89,11 @@ def cluster_init(volume_cfg):
     log(f"[INFO] Volume '{name}' ready.")
 
 def do_mount(remote, target, opts=""):
+    """Mount a GlusterFS volume (remote) to the given target with optional mount options."""
     os.makedirs(target, exist_ok=True)
     if not is_mounted(target):
         opt = f"-o {opts} " if (opts or "").strip() else ""
-        cmd = f"mount -t glusterfs {opt}{remote} {target}"
+        cmd = f"mount -t glusterfs  # FUSE mount of Gluster volume {opt}{remote} {target}"
         log(f"[INFO] Mounting: {cmd}")
         sh(cmd)
         log(f"[INFO] Mounted {remote} -> {target}")
@@ -83,17 +101,20 @@ def do_mount(remote, target, opts=""):
         log(f"[INFO] Already mounted: {target}")
 
 def do_umount(target):
+    """Attempt to unmount the given target path; ignore errors if already unmounted."""
     if is_mounted(target):
         if subprocess.run(f"umount {target}", shell=True).returncode != 0:
             subprocess.run(f"umount -l {target}", shell=True)
         log(f"[INFO] Unmounted {target}")
 
 def server_loop():
+    """Background loop to periodically emit cluster status while the server runs."""
     # Emit lightweight status every 60s
     while not stop_event.wait(60):
         subprocess.run("gluster peer status", shell=True)
 
 def client_mode(cfg):
+    """Handle client role: perform mounts defined in config and block until signalled to stop."""
     mounts = cfg.get("mounts") or []
     # Perform mounts
     for m in mounts:
@@ -110,9 +131,11 @@ def client_mode(cfg):
         pass
 
 def handle_signal(signum, frame):
+    """Signal handler that sets a stop event for graceful shutdown."""
     stop_event.set()
 
 def main():
+    """Program entrypoint: parse config, dispatch by role, and block appropriately."""
     cfg_path = os.environ.get("CONFIG_PATH", None) or (sys.argv[1] if len(sys.argv) > 1 else CONFIG_PATH_DEFAULT)
     cfg = {}
     if os.path.exists(cfg_path):
