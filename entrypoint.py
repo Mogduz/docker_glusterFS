@@ -71,6 +71,34 @@ def which(cmd: str) -> str | None:
             return cand
     return None
 
+def preflight_glusterd() -> str:
+    """
+    Prüft, welche glusterd-Binary verwendet wird, ob sie ausführbar ist
+    und ob es sich NICHT um den glusterfs-Client handelt.
+    Gibt den aufzulösenden Pfad zurück oder bricht mit klarer Meldung ab.
+    """
+    cand = os.environ.get('GLUSTERD_BIN','').strip() or 'glusterd'
+    # Pfad auflösen
+    cp = subprocess.run(f"command -v {cand}", shell=True, text=True, capture_output=True)
+    if cp.returncode != 0 or not (cp.stdout.strip()):
+        die(28, "glusterd nicht im PATH gefunden. Ist glusterfs-server installiert?", PATH=os.environ.get('PATH'))
+    path = cp.stdout.strip().splitlines()[0]
+    # Realpath ermitteln (Symlink-Fallen)
+    real = os.path.realpath(path)
+    # Hilfetext inspizieren
+    help_out = subprocess.run(f"{shlex.quote(path)} --help", shell=True, text=True, capture_output=True)
+    help_txt = (help_out.stdout or help_out.stderr or '')
+    # Debian-basierte Systeme: Paketbesitzer
+    pkg_out = subprocess.run(f"dpkg -S {shlex.quote(real)}", shell=True, text=True, capture_output=True)
+    pkg = (pkg_out.stdout or pkg_out.stderr or '').strip()
+    # Erkennung Client vs. Daemon
+    if 'volfile-server' in help_txt and 'MOUNT-POINT' in help_txt:
+        die(27, "Falsches glusterd-Binary (Client statt Daemon). Prüfe Pakete/PATH.",
+            found=path, realpath=real, package=pkg[:120])
+    log("INFO", "Preflight OK: glusterd", path=path, realpath=real, package=pkg[:120])
+    return path
+
+
 def require(cmd: str):
     if not which(cmd):
         die(10, f"Benötigtes Kommando nicht gefunden: {cmd}")
