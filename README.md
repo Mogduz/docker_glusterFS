@@ -1,325 +1,196 @@
-# GlusterFS Server in Docker (Ubuntu 24.04)
+# glusterfs-hybrid (Ubuntu 24.04)
+Ein **hybrides** GlusterFS-Container-Image für Ubuntu 24.04, das per Konfiguration als
+- **Server** (`role: server`),
+- **Server mit Bootstrap** (`role: server+bootstrap`),
+- **Client** (`role: client`) oder
+- **noop** (nichts tun, nur für Debug)
+läuft.
 
-A production‑ready Docker image for running a **GlusterFS server** on **Ubuntu 24.04 (Noble)** — designed for **host bind mounts**, **declarative YAML configuration**, and **safe-by-default** bootstrapping.
+**Wichtiges Feature:** Im **Client-Mode** mountet der Container ein GlusterFS-Volume **in den Containerpfad** (z. B. `/mnt/glusterFS`). Dank **Mount-Propagation `rshared`** taucht derselbe Mount **automatisch auf dem Host** unter **dem gleichen Pfad** auf – **nur solange der Client läuft**. Stoppt der Container sauber, wird ausgehängt und der Host-Pfad ist wieder „leer“.
 
-This repository contains:
-- A minimal **Dockerfile** that installs `glusterfs-server` and tooling (`yq`, `jq`).
-- A **chatty entrypoint** that validates mounts, reads a **YAML cluster configuration**, optionally **probes peers**, and **creates/starts volumes** idempotently.
-- A **single persistent root mount** (`/gluster`) for **state**, **config**, and **logs** via symlinks, and **dedicated bind mounts per brick** for data.
-- Examples for `docker run` and **docker‑compose**.
-
-> ⚠️ This image intentionally **does not use systemd**. The management daemon is launched with `glusterd -N` in the foreground and supervised by the container runtime.
+> Tested on: Ubuntu 24.04 LTS, Docker Engine 24+, Compose v2.
 
 ---
 
-## TL;DR
+## Inhaltsverzeichnis
+- [Architektur](#architektur)
+- [Voraussetzungen](#voraussetzungen)
+- [Schnellstart](#schnellstart)
+  - [Image bauen](#image-bauen)
+  - [Server auf drei Hosts](#server-auf-drei-hosts)
+  - [Client-Mount (Mount nur solange der Client läuft)](#client-mount-mount-nur-solange-der-client-läuft)
+- [Konfiguration](#konfiguration)
+  - [Server](#server)
+  - [Server + Bootstrap](#server--bootstrap)
+  - [Client](#client)
+- [Healthcheck & Logs](#healthcheck--logs)
+- [Sicherheit & Rechte](#sicherheit--rechte)
+- [Troubleshooting](#troubleshooting)
+- [Production-Checkliste](#production-checkliste)
+- [Lizenz](#lizenz)
 
+---
+
+## Architektur
+- **State auf dem Host**: `/etc/glusterfs`, `/var/lib/glusterd`, `/var/log/glusterfs`, Brick-Pfade (z. B. `/data/brick1/brick`).
+- **Server-Container** starten `glusterd` im Vordergrund (`-N`) und verwenden **Host-Netz**.
+- **Client-Container** bringt FUSE mit, mountet ein Volume nach `/mnt/glusterFS` (oder ein anderes Ziel) und macht es via Bind-Mount mit `rshared` auf dem Host sichtbar.
+- **Kein „Master“** in Gluster: `server+bootstrap` übernimmt einmalig die Initialisierung (Peers & Volume), danach sind alle Knoten **gleichberechtigt**.
+
+**Ports** (wenn Firewall aktiv):  
+- Management: **TCP 24007/24008**  
+- Pro Brick **ein Port ab 49152** (typisch 49152–49251)
+
+---
+
+## Voraussetzungen
+- Ubuntu 24.04 LTS Hosts mit Docker Engine ≥24 und `docker compose` (v2).
+- Für **Server-Container**: `network_mode: host`, Brick-Verzeichnisse als Bind-Mounts.
+- Für **Client-Container**: `/dev/fuse`, `CAP_SYS_ADMIN`, `security_opt: apparmor:unconfined` (je nach Profil), und ein Bind-Mount des Zielpfads mit **`propagation: rshared`**.
+
+> **Hinweis zur „Vorbereitung“**: In typischen Ubuntu-24.04-Setups reicht das Compose mit `propagation: rshared`. Falls der Mount wider Erwarten **nicht** auf dem Host sichtbar wird, siehe [Troubleshooting](#troubleshooting).
+
+---
+
+## Schnellstart
+
+### Image bauen
 ```bash
-# Host: create persistence + brick folders
-sudo mkdir -p /srv/gluster/{etc,glusterd,logs}
-sudo mkdir -p /data/gluster/{vol1_brick,vol2_brick}
-
-# Write a simple cluster.yml
-cat >/srv/gluster/etc/cluster.yml <<'YAML'
-manager_node: gluster1
-peers: [gluster1]
-local_bricks:
-  - /gluster/bricks/vol1/brick
-  - /gluster/bricks/vol2/brick
-volumes:
-  - name: gv0
-    type: distribute
-    bricks:
-      - gluster1:/gluster/bricks/vol1/brick
-      - gluster1:/gluster/bricks/vol2/brick
-    options: { nfs.disable: "on" }
-YAML
-
-# Run the container (single persistence mount + per‑brick mounts)
-docker run -d --name gluster1 --hostname gluster1 \
-  --ulimit nofile=65536:65536 \
-  -p 24007:24007 -p 24008:24008 -p 49152-49251:49152-49251 \
-  -v /srv/gluster:/gluster \
-  -v /data/gluster/vol1_brick:/gluster/bricks/vol1/brick \
-  -v /data/gluster/vol2_brick:/gluster/bricks/vol2/brick \
-  -e AUTO_CREATE_VOLUMES=true \
-  drezael/glusterfs:0.1
+git clone <dieses-repo>
+cd glusterfs-hybrid
+docker build -t ghcr.io/yourorg/glusterfs-hybrid:ubuntu24 .
 ```
 
----
+### Server auf drei Hosts
+> Auf **jedem** Host denselben Dienst starten; nur Brick-Bind-Mounts anpassen.
 
-## Why this image?
+1. Auf **gfs1** `compose.server.yml` verwenden und `examples/config.server-bootstrap.yaml` (angepasst) mounten:
+   ```bash
+   docker compose -f compose.server.yml up -d
+   ```
+   - `compose.server.yml` bindet `./examples/config.server.yaml` – tausche den Mount gegen `config.server-bootstrap.yaml` auf **gfs1** aus, wenn dieser Knoten bootstrappen soll.
+2. Auf **gfs2/gfs3** `role: server` verwenden.
 
-- **Host‑first storage**: Bricks live on host **ext4** (or your FS of choice) and are mounted **one by one** into the container — no hidden data in container layers.
-- **Single persistence mount**: `/gluster` holds **state**, **config**, and **logs** — simple backups and clean portability.
-- **Declarative setup**: A small **YAML file** defines peers, local bricks, and volumes. The entrypoint applies it **idempotently**.
-- **Safety guard**: Prevents accidental **single‑brick volumes** (SPoF). Can be overridden explicitly.
-- **Verbose boot logs**: Clear step‑by‑step output to understand what happens at startup.
+**Beispiel Brick-Layout:**  
+Host `/data/brick1/brick` → Container `/bricks/brick1/brick` (Brick-Root immer als Unterordner `brick/`).
 
----
-
-## Image contents
-
-- `glusterfs-server`
-- `yq`, `jq` for YAML/JSON parsing in the entrypoint
-- `acl`, `attr`, `procps` (for ACL/xattrs and health checks)
-- **No systemd**; runs `glusterd` in the foreground
-
----
-
-## Design & Layout
-
-- **Single persistence root**: You bind‑mount **one** host directory to `/gluster`.
-  - `/var/lib/glusterd` → symlink to `/gluster/glusterd`
-  - `/etc/glusterfs`   → symlink to `/gluster/etc`
-  - `/var/log/glusterfs` → symlink to `/gluster/logs`
-- **Bricks**: Bind‑mount each brick explicitly, e.g. `/data/gluster/vol1_brick:/gluster/bricks/vol1/brick`.
-- **Ports**: `24007/tcp` (mgmt), `24008/tcp`, and `49152–49251/tcp` (brick port range).
+### Client-Mount (Mount **nur solange** der Client läuft)
+1. `compose.client.yml` starten:
+   ```bash
+   docker compose -f compose.client.yml up -d
+   ```
+2. Ergebnis: Im Container wird `gfs1:/gv0` nach `/mnt/glusterFS` gemountet. **Durch `rshared`** erscheint der Mount **gleichzeitig auf dem Host** unter `/mnt/glusterFS`.  
+3. `docker stop gluster-client` → sauberer **Unmount** → Host-Pfad ist wieder leer.
 
 ---
 
-## Configuration file (`cluster.yml`)
+## Konfiguration
 
-A declarative YAML that can live at `/gluster/etc/cluster.yml` (default) and is read by the entrypoint.
-
-### Example
-
+### Server
+`examples/config.server.yaml`
 ```yaml
-manager_node: gluster1            # Node that manages volume creation (avoids race conditions)
-
-peers:                            # Optional list of peers; the entrypoint will 'peer probe' them
-  - gluster1
-  # - gluster2
-
-local_bricks:                     # Brick paths on THIS node (checked & must be bind‑mounted)
-  - /gluster/bricks/vol1/brick
-  - /gluster/bricks/vol2/brick
-
-volumes:
-  - name: gv0
-    type: distribute              # distribute | replicate | disperse
-    transport: tcp
-    bricks:
-      - gluster1:/gluster/bricks/vol1/brick
-      - gluster1:/gluster/bricks/vol2/brick
-    options:
-      nfs.disable: "on"
-      performance.client-io-threads: "on"
+role: "server"
+node:
+  hostname: "gfs1"
+bricks:
+  - path: "/bricks/brick1/brick"
 ```
 
-### Replicated volume across two nodes (example)
-
+### Server + Bootstrap
+`examples/config.server-bootstrap.yaml`
 ```yaml
-manager_node: gluster1
-peers: [gluster1, gluster2]
-
-local_bricks:
-  - /gluster/bricks/vol1/brick     # on each node: a different underlying host path
-
-volumes:
-  - name: gv_repl2
-    type: replicate
-    replica: 2
-    transport: tcp
-    bricks:
-      - gluster1:/gluster/bricks/vol1/brick
-      - gluster2:/gluster/bricks/vol1/brick
-    options:
-      cluster.quorum-type: "auto"
-      nfs.disable: "on"
+role: "server+bootstrap"
+cluster:
+  peers: ["gfs2","gfs3"]
+volume:
+  name: "gv0"
+  type: "replica"         # replica | distribute | disperse
+  replica: 3
+  arbiter: 0              # für Arbiter-Variante auf 1 setzen
+  transport: "tcp"
+  bricks:
+    - "gfs1:/bricks/brick1/brick"
+    - "gfs2:/bricks/brick1/brick"
+    - "gfs3:/bricks/brick1/brick"
+  options:
+    performance.client-io-threads: "on"
+    cluster.lookup-optimize: "on"
 ```
 
-> For **disperse** volumes define `disperse_count` and `redundancy` and provide exactly `disperse_count` bricks.
-
----
-
-## Environment variables
-
-| Variable | Default | Description |
-|---------|---------|-------------|
-| `GLUSTER_ROOT` | `/gluster` | Single persistence mount containing `etc`, `glusterd`, and `logs`. |
-| `GLUSTER_CONFIG` | `/gluster/etc/cluster.yml` | Path to YAML config. |
-| `GLUSTER_NODE` | *(hostname -s)* | Friendly node name override. |
-| `AUTO_PROBE_PEERS` | `true` | Probe peers listed in `peers:` on startup. |
-| `AUTO_CREATE_VOLUMES` | `false` | Create/set/start volumes from YAML (idempotent). |
-| `MANAGER_NODE` | *(unset)* | Only this node performs volume management. Fallback: `manager_node` in YAML. |
-| `FAIL_ON_UNMOUNTED_BRICK` | `true` | Fail fast if a brick path is not a bind‑mount. |
-| `BRICKS` | *(unset)* | Optional comma‑separated additional local brick paths. |
-| `ALLOW_SINGLE_BRICK` | `false` | Safety guard: if a volume has exactly **1 brick**, fail unless set to `true`. |
-
----
-
-## Usage
-
-### Docker Compose
-
-`docker-compose.yml`:
-
+### Client
+`examples/config.client.yaml`
 ```yaml
-version: "3.9"
-services:
-  gluster1:
-    image: drezael/glusterfs:0.1
-    container_name: gluster1
-    hostname: gluster1
-    restart: unless-stopped
-    ulimits: { nofile: 65536 }
-    ports:
-      - "24007:24007"
-      - "24008:24008"
-      - "49152-49251:49152-49251"
-    environment:
-      AUTO_PROBE_PEERS: "true"
-      AUTO_CREATE_VOLUMES: "true"
-      MANAGER_NODE: "gluster1"
-      FAIL_ON_UNMOUNTED_BRICK: "true"
-      ALLOW_SINGLE_BRICK: "false"
-    volumes:
-      - /srv/gluster:/gluster
-      - /data/gluster/vol1_brick:/gluster/bricks/vol1/brick
-      - /data/gluster/vol2_brick:/gluster/bricks/vol2/brick
+role: "client"
+mounts:
+  - remote: "gfs1:/gv0"
+    target: "/mnt/glusterFS"
+    opts: "backupvolfile-server=gfs2,_netdev,log-level=INFO"
 ```
 
-Bring it up:
-
-```bash
-docker compose up -d
-docker logs -f gluster1
-```
-
-### Plain `docker run`
-
-See the TL;DR at the top.
+**Override via ENV:**  
+- `ROLE`, `CONFIG_PATH` (Pfad zur YAML) können als Umgebungsvariablen gesetzt werden.
 
 ---
 
-## Multi‑node quick start (replica 2)
-
-1. Prepare both hosts with brick folders and `/srv/gluster`.
-2. Use identical `cluster.yml` on both; set correct `hostname` and `MANAGER_NODE` (e.g. `gluster1`).
-3. Start both containers (expose ports or use `--network host` in a trusted network).
-4. On first run the manager node will probe the other, create the volume, set options, and start it.
-
-> After adding bricks, remember to run `gluster volume rebalance <VOL> start` for distribute layouts.
+## Healthcheck & Logs
+- **Healthcheck** (im Image):  
+  - **Client**: prüft `mountpoint` des ersten `target` (Standard: `/mnt/glusterFS`).  
+  - **Server**: prüft `glusterd`-Prozess und `gluster`-CLI (`volume list` oder `peer status`).
+- **Logs**:  
+  - Server-Logs unter `/var/log/glusterfs` (persistiert durch Bind-Mount).  
+  - Entrypoint schreibt Status ins Container-Stdout (sichtbar via `docker logs`).
 
 ---
 
-## Healthcheck & Logging
-
-- **Healthcheck**: checks that `glusterd` is running (`pgrep -x glusterd`).  
-- **Logs**: written under `/gluster/logs`. You can `docker logs` for the entrypoint chatter and tail the Gluster logs on the host.
+## Sicherheit & Rechte
+- **Server** benötigt **kein `--privileged`**, da kein systemd im Container läuft. Host-Netz ist notwendig (viele Ports, dynamische Brick-Ports).  
+- **Client** benötigt `CAP_SYS_ADMIN` und `/dev/fuse` zum Mounten. `apparmor:unconfined` kann je nach Host-Profil nötig sein.  
+- **Rootless Docker** ist für Client-FUSE-Mounts ungeeignet.
 
 ---
 
 ## Troubleshooting
 
-- **`ERROR: Persistenz-Mount /gluster not detected`**  
-  Ensure `-v /srv/gluster:/gluster` is present.
-
-- **`ERROR: Brick not mounted`**  
-  Bind‑mount each brick (e.g. `-v /data/vol1:/gluster/bricks/vol1/brick`). Set `FAIL_ON_UNMOUNTED_BRICK=false` only for tests.
-
-- **Single brick volume error**  
-  Either set `ALLOW_SINGLE_BRICK=true` (test only) or add more bricks / change to `replicate` with `replica: N`.
-
-- **Peer probe keeps retrying**  
-  Check connectivity and hostnames/DNS. Ensure ports are reachable; consider `--network host`.
-
-- **Volume create fails for replicate/disperse**  
-  Verify brick count matches `replica` or `disperse_count`. The entrypoint prints an explicit reason and exits.
-
----
-
-## Building the image
-
-```bash
-# Build & push with buildx
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  --output type=registry \
-  -t drezael/glusterfs:0.1 \
-  .
-```
-
-For local single‑arch testing:
-
-```bash
-docker build -t drezael/glusterfs:dev .
-```
-
----
-
-## Security notes
-
-- Run on trusted hosts/networks. Exposed ports should be firewalled properly.
-- Data durability depends on the host filesystem (e.g., ext4 with ACL/xattrs enabled).
-- Consider `replicate` or `disperse` topologies for redundancy; `distribute` alone offers no data protection.
-
----
-
-## License
-
-This repository is intended to be licensed under your chosen open‑source license (e.g., Apache‑2.0/MIT).  
-Add a `LICENSE` file at the repository root and adjust this section accordingly.
-
----
-
-## Acknowledgements
-
-- GlusterFS project and documentation
-- Community examples and best practices around containerized Gluster nodes
-
----
-
-## Network isolation: bind to a specific internal IP (no new networks)
-
-If your host already has two network interfaces (e.g., one public and one **internal**) and you want the container to listen **only** on the internal address (e.g., `10.0.1.2`), you don't need any special Docker networks and you **do not** need to change the Dockerfile. Simply bind the published ports to the internal host IP.
-
-### docker-compose
-```yaml
-version: "3.9"
-services:
-  gluster1:
-    image: drezael/glusterfs:0.1
-    container_name: gluster1
-    hostname: gluster1
-    restart: unless-stopped
-    ulimits: { nofile: 65536 }
-    ports:
-      - "10.0.1.2:24007:24007"                 # glusterd (mgmt)
-      - "10.0.1.2:24008:24008"
-      - "10.0.1.2:49152-49251:49152-49251"     # brick port range
-    volumes:
-      - /srv/gluster:/gluster
-      - /data/gluster/vol1:/gluster/bricks/vol1/brick
-      # - /data/gluster/vol2:/gluster/bricks/vol2/brick
-    environment:
-      AUTO_PROBE_PEERS: "true"
-      AUTO_CREATE_VOLUMES: "true"
-      MANAGER_NODE: "gluster1"
-```
-
-### docker run
-```bash
-docker run -d --name gluster1 --hostname gluster1 \
-  --ulimit nofile=65536:65536 \
-  -p 10.0.1.2:24007:24007 \
-  -p 10.0.1.2:24008:24008 \
-  -p 10.0.1.2:49152-49251:49152-49251 \
-  -v /srv/gluster:/gluster \
-  -v /data/gluster/vol1:/gluster/bricks/vol1/brick \
-  -e AUTO_PROBE_PEERS=true \
-  -e AUTO_CREATE_VOLUMES=true \
-  -e MANAGER_NODE=gluster1 \
-  drezael/glusterfs:0.1
-```
-
-**Notes**
-- Only the internal address `10.0.1.2` will accept connections; nothing is bound on the public interface.
-- In your `cluster.yml`, use the internal IPs/hostnames for peers.
-- Outbound traffic still follows the host’s routing; if you want to block Internet egress, do that in the host firewall.
-- Verify binding on the host:
+### Mount taucht auf dem Host nicht auf
+- In seltenen Setups ist die Mount-Propagation des Host-Pfads nicht `shared`. Prüfe per:
   ```bash
-  ss -ltnp | grep -E '24007|24008|4915[2-9][0-9]|492[0-4][0-9]|4925[0-1]'
-  # Output should show 10.0.1.2:PORT, not 0.0.0.0:PORT
+  findmnt -o TARGET,PROPAGATION /mnt/glusterFS
   ```
+  Falls nicht `shared`:
+  ```bash
+  sudo mount --make-shared /mnt/glusterFS
+  ```
+  Dann Client-Container neu starten.
+
+### Unmount schlägt fehl („Device busy“)
+- Container erneut sauber stoppen/starten.
+- Oder auf dem Host:
+  ```bash
+  sudo umount /mnt/glusterFS || sudo umount -l /mnt/glusterFS
+  ```
+
+### „Transport endpoint is not connected“
+- Typisch nach Netzwerk-/Serverproblemen. Unmounten und neu mounten:
+  ```bash
+  sudo umount -l /mnt/glusterFS
+  docker compose -f compose.client.yml up -d
+  ```
+
+### Rootless / Podman
+- Nicht unterstützt für FUSE-Mounts im Container (fehlende Privilegien).
+
+---
+
+## Production-Checkliste
+- **Ports**: 24007/24008 offen; Brick-Ports ab 49152 (Range z. B. 49152–49251).  
+- **Zeit-Sync** (chrony/ntp) auf allen Hosts.  
+- **Brick-Layout**: Dedizierte Filesysteme (XFS/ext4), Brick-Root als Unterordner `brick/`.  
+- **Heals**: `gluster volume heal <vol> info` regelmäßig prüfen/monitoren.  
+- **Backups**: Snapshot/Backup auf Brick-Ebene oder via Client-Mount.  
+- **Monitoring**: Logs, `gluster`-CLI-Metriken; optional Prometheus-Exporter (extern).  
+- **Updates**: Neues Image bauen, Container neu starten (State bleibt auf dem Host).
+
+---
+
+## Lizenz
+MIT – siehe `LICENSE`.
