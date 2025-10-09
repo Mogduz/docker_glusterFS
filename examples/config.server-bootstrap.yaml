@@ -1,7 +1,12 @@
+# Example configuration: config.server-bootstrap.yaml
+# Copy and adapt these values to match your environment.
+# This file is read by /usr/local/bin/entrypoint.py inside the container.
 # examples/config.server-bootstrap.yaml
 # Start a Gluster server and (idempotently) bootstrap a volume.
+# Role for this container: server | server+bootstrap | client | noop
 role: "server+bootstrap"
 cluster:
+# Hostnames (or IPs) of other Gluster peers
   peers: ["gfs2","gfs3"]
 volume:
   name: "gv0"
@@ -9,6 +14,7 @@ volume:
   replica: 3              # for arbiter: replica: 3, arbiter: 1
   arbiter: 0              # set to 1 to use replica 3 arbiter 1
   transport: "tcp"
+# Brick export paths (host:container or absolute when bootstrapping)
   bricks:
     - "gfs1:/bricks/brick1/brick"
     - "gfs2:/bricks/brick1/brick"
