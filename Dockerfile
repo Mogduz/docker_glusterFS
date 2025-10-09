@@ -20,6 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       glusterfs-server glusterfs-client xfsprogs attr python3 python3-yaml tini ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 # Persisted state (bind from host)
+ENV PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV GLUSTERD_BIN="/usr/sbin/glusterd"
 VOLUME ["/etc/glusterfs", "/var/lib/glusterd", "/var/log/glusterfs", "/bricks"]
 # Informational expose; use host network mode for servers
 EXPOSE 24007 24008
