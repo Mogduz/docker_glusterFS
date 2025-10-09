@@ -32,3 +32,18 @@ gluster-hybrid
 
   ## Beispielkonfiguration
   Siehe `config.yaml.sample` für `server+bootstrap` und `client`.
+
+
+## Troubleshooting
+
+**Symptom:** `USAGE: glusterd [options] [mountpoint]` und Hinweise auf `--volfile-server`  
+**Ursache:** Falsches Binary – das ist der *Client* (`glusterfs`), nicht der Daemon.  
+**Fix:** Stelle sicher, dass **glusterfs-server** installiert ist, und dass `GLUSTERD_BIN` auf den Daemon zeigt:
+```bash
+dpkg -l | egrep 'glusterfs-(server|client)'
+command -v glusterd; readlink -f $(command -v glusterd)
+```
+Starte den Container mit:
+```bash
+-e GLUSTERD_BIN=/usr/sbin/glusterd     -e PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+```
