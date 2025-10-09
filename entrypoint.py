@@ -1,27 +1,10 @@
 #!/usr/bin/env python3
 """
-GlusterFS hybrid container entrypoint (refactored for clarity & diagnostics).
+GlusterFS hybrid container entrypoint (diagnostisch, robust gegenüber glusterd-Flag-Varianten).
 
-Rollen (per $ROLE oder aus YAML):
-  - server            : Startet glusterd im Vordergrund.
-  - server+bootstrap  : Startet glusterd und führt idempotentes Peer-Probing & Volume-Bootstrap aus.
-  - client            : Führt FUSE-Mounts aus der YAML-Konfiguration aus und hält sie am Leben.
-  - noop              : Macht nichts, wartet auf SIGTERM/CTRL-C.
-
-Merkmale:
-  - Ausführliche, strukturierte Logs (Text oder JSON) mit Levelsteuerung.
-  - Saubere Fehlerpfade mit Exit-Codes und zusammengefassten Ursachen.
-  - Idempotente Operationen (erneutes Starten ist sicher).
-  - SIGTERM/SIGINT werden abgefangen und führen zu sauberem Shutdown (Unmounts etc.).
-
-Konfiguration:
-  - Standardpfad: /etc/gluster-container/config.yaml (über 1. CLI-Arg oder $CONFIG_PATH überschreibbar).
-  - LOG_FORMAT: "text" (default) oder "json"
-  - LOG_LEVEL : "DEBUG", "INFO" (default), "WARN", "ERROR"
-  - DRY_RUN   : "1" = keine destruktiven Kommandos ausführen (nur loggen)
-
-Hinweis: Diese Datei ist bewusst sehr gesprächig. Ziel: Bei Problemen in `docker logs`
-schnell verstehen, *was* schiefging und *warum*.
+Rollen: server | server+bootstrap | client | noop
+Siehe README im Dockerfile. Dieses Skript erzeugt ausführliche Logs und bricht mit
+sinnvollen Exit-Codes + Ursachenbeschreibung ab.
 """
 from __future__ import annotations
 
@@ -33,7 +16,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     import yaml
@@ -53,29 +36,24 @@ stop_event = threading.Event()
 child_procs = []  # type: list[subprocess.Popen]
 
 def _ts() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    # timezone-aware UTC (vermeidet DeprecationWarning)
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 def log(level: str, msg: str, **fields):
     lv = LEVELS.get(level.upper(), 20)
     if lv < LOG_LEVEL:
         return
     if LOG_FORMAT == "json":
+        import json
         obj = {"ts": _ts(), "level": level.upper(), "msg": msg}
         if fields:
             obj.update(fields)
-        print(_safe_json(obj), file=sys.stderr)
+        print(json.dumps(obj, ensure_ascii=False), file=sys.stderr)
     else:
         parts = [f"{_ts()} [{level.upper()}] {msg}"]
         for k, v in fields.items():
             parts.append(f"{k}={v}")
         print(" ".join(parts), file=sys.stderr)
-
-def _safe_json(obj) -> str:
-    try:
-        import json
-        return json.dumps(obj, ensure_ascii=False)
-    except Exception:
-        return str(obj)
 
 def die(exitcode: int, msg: str, **fields):
     log("ERROR", msg, **fields)
@@ -97,7 +75,6 @@ def run(cmd: str, check: bool = True, timeout: int | None = None) -> subprocess.
     """Run a shell command, capture output, and always log failures verbosely."""
     if DRY_RUN:
         log("INFO", "DRY_RUN: würde ausführen", cmd=cmd)
-        # Simulate success
         return subprocess.CompletedProcess(cmd, 0, "", "")
     log("DEBUG", "exec", cmd=cmd)
     cp = subprocess.run(cmd, shell=True, text=True, capture_output=True, timeout=timeout)
@@ -106,17 +83,9 @@ def run(cmd: str, check: bool = True, timeout: int | None = None) -> subprocess.
         raise subprocess.CalledProcessError(cp.returncode, cmd, output=cp.stdout, stderr=cp.stderr)
     return cp
 
-def backoff_sleep(seconds: float, reason: str):
-    log("INFO", f"Warte {seconds:.1f}s", reason=reason)
-    time.sleep(seconds)
-
-# ----------------------------- Mount helpers -----------------------------
 def is_mounted(target: str) -> bool:
-    cp = subprocess.run(f"mountpoint -q {shellq(target)}", shell=True)
+    cp = subprocess.run(f"mountpoint -q '{target.replace("'", "'\\''")}'", shell=True)
     return cp.returncode == 0
-
-def shellq(s: str) -> str:
-    return "'" + s.replace("'", "'\''") + "'"
 
 def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
@@ -135,21 +104,44 @@ def load_config(path: str) -> dict:
         die(22, "Konnte YAML nicht lesen", path=path, error=repr(e))
 
 # ----------------------------- Role logic -----------------------------
-def start_server_foreground() -> subprocess.Popen:
-    require("glusterd")
-    cmd = "glusterd -N"
-    log("INFO", "Starte glusterd (foreground)", cmd=cmd)
+def _spawn(cmd: str) -> subprocess.Popen:
+    """Starte einen Prozess, leite stdout/stderr zum Container-Log um (kein capture)."""
     if DRY_RUN:
-        log("INFO", "DRY_RUN: glusterd würde gestartet")
-        return subprocess.Popen(["/bin/sh", "-c", "sleep 3600"])  # dummy
-    proc = subprocess.Popen(cmd, shell=True, text=True)
-    child_procs.append(proc)
-    return proc
+        log("INFO", "DRY_RUN: würde Prozess starten", cmd=cmd)
+        return subprocess.Popen(["/bin/sh", "-c", "sleep 3600"])
+    log("INFO", "Starte Prozess", cmd=cmd)
+    p = subprocess.Popen(cmd, shell=True, text=True)
+    child_procs.append(p)
+    return p
 
-def wait_glusterd_ready(timeout_sec: int = 30):
+def start_glusterd() -> subprocess.Popen:
+    """Robustes Starten: versuche -N, dann --no-daemon, dann ohne Flag. Logge --help bei Fehler."""
+    require("glusterd")
+    candidates = ["glusterd -N", "glusterd --no-daemon", "glusterd"]
+    last_err = None
+    for cmd in candidates:
+        p = _spawn(cmd)
+        # Wenn der Prozess sofort stirbt, probiere die nächste Variante
+        time.sleep(1.0)
+        if p.poll() is None:
+            log("INFO", "glusterd läuft", cmd=cmd, pid=p.pid)
+            return p
+        else:
+            rc = p.returncode
+            try:
+                help_out = subprocess.run("glusterd --help", shell=True, text=True, capture_output=True)
+                log("WARN", "glusterd Variante fehlgeschlagen", cmd=cmd, rc=rc, help=(help_out.stdout or help_out.stderr or "").splitlines()[:5])
+            except Exception:
+                log("WARN", "glusterd Variante fehlgeschlagen (kein --help verfügbar?)", cmd=cmd, rc=rc)
+            last_err = rc
+    die(29, "Alle Startvarianten für glusterd sind fehlgeschlagen", last_rc=last_err)
+
+def wait_glusterd_ready(proc: subprocess.Popen, timeout_sec: int = 45):
     require("gluster")
     start = time.time()
     while time.time() - start < timeout_sec:
+        if proc.poll() is not None:
+            die(31, "glusterd hat unerwartet beendet", rc=proc.returncode)
         cp = subprocess.run("gluster volume list >/dev/null 2>&1 || gluster peer status >/dev/null 2>&1", shell=True)
         if cp.returncode == 0:
             log("INFO", "glusterd bereit")
@@ -161,7 +153,6 @@ def bootstrap_server(cfg: dict):
     peers = cfg.get("peers") or []
     volume = (cfg.get("volume") or {})
 
-    # Peer probe
     for host in peers:
         if not host:
             continue
@@ -170,10 +161,9 @@ def bootstrap_server(cfg: dict):
         except Exception:
             log("WARN", "Peer-Probe fehlgeschlagen", host=host)
 
-    # Volume create
     name = volume.get("name")
     bricks = volume.get("bricks") or []
-    vtype = (volume.get("type") or "").lower()  # replicate, disperse, etc.
+    vtype = (volume.get("type") or "").lower()
     transport = volume.get("transport", "tcp")
     replica = volume.get("replica")
     arbiter = volume.get("arbiter")
@@ -197,8 +187,6 @@ def bootstrap_server(cfg: dict):
         log("INFO", "Erzeuge Volume (idempotent)", cmd=cmd)
         run(cmd, check=False)
         run(f"gluster volume start {name}", check=False)
-
-        # Volume-Optionen (idempotent)
         for k, v in (volume.get("options") or {}).items():
             run(f"gluster volume set {name} {k} {v}", check=False)
         log("INFO", "Volume bereit", name=name)
@@ -210,7 +198,7 @@ def client_mounts(cfg: dict):
     if not mounts:
         log("WARN", "Keine Mounts im client-Modus konfiguriert")
     for m in mounts:
-        remote = m.get("remote")  # host:volname
+        remote = m.get("remote")
         target = m.get("target") or "/mnt/gluster"
         opts = m.get("opts") or ""
         if not remote:
@@ -220,9 +208,9 @@ def client_mounts(cfg: dict):
         if is_mounted(target):
             log("INFO", "Bereits gemountet", target=target)
             continue
-        cmd = f"mount -t glusterfs {remote} {shellq(target)}"
+        cmd = f"mount -t glusterfs {remote} '{target.replace("'", "'\\''")}'"
         if opts.strip():
-            cmd = f"mount -t glusterfs -o {opts} {remote} {shellq(target)}"
+            cmd = f"mount -t glusterfs -o {opts} {remote} '{target.replace("'", "'\\''")}'"
         try:
             run(cmd, check=True)
             log("INFO", "Gemountet", remote=remote, target=target)
@@ -235,9 +223,8 @@ def client_unmounts(cfg: dict):
         target = m.get("target") or "/mnt/gluster"
         if is_mounted(target):
             log("INFO", "Unmount", target=target)
-            run(f"umount {shellq(target)} || umount -l {shellq(target)}", check=False)
+            run(f"umount '{target.replace("'", "'\\''")}' || umount -l '{target.replace("'", "'\\''")}'", check=False)
 
-# ----------------------------- Signal handling -----------------------------
 def _handle_stop(signum, frame):
     log("INFO", "Signal empfangen, stoppe...", signal=signum)
     stop_event.set()
@@ -260,7 +247,6 @@ def _kill_children():
 
 atexit.register(_kill_children)
 
-# ----------------------------- Main -----------------------------
 def main():
     parser = argparse.ArgumentParser(description="GlusterFS Container Entrypoint (diagnostisch)")
     parser.add_argument("config", nargs="?", default=os.environ.get("CONFIG_PATH", CONFIG_PATH_DEFAULT),
@@ -286,19 +272,17 @@ def main():
     log("INFO", "Starte Entrypoint", role=role, config=args.config, dry_run=DRY_RUN)
 
     if role == "noop":
-        # Einfach warten, bis ein Signal kommt
         while not stop_event.wait(1):
             pass
         log("INFO", "noop beendet")
         return
 
     if role.startswith("server"):
-        proc = start_server_foreground()
+        proc = start_glusterd()
         try:
-            wait_glusterd_ready()
+            wait_glusterd_ready(proc)
             if role == "server+bootstrap":
                 bootstrap_server(cfg)
-            # Halteschleife: bleibe am Leben, solange glusterd läuft
             while not stop_event.wait(1):
                 if proc.poll() is not None:
                     die(31, "glusterd hat unerwartet beendet", rc=proc.returncode)
@@ -315,7 +299,6 @@ def main():
     if role == "client":
         try:
             client_mounts(cfg)
-            # stay alive until stopped
             while not stop_event.wait(1):
                 pass
         finally:
