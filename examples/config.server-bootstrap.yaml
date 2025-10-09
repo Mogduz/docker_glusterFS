@@ -1,0 +1,18 @@
+# examples/config.server-bootstrap.yaml
+# Start a Gluster server and (idempotently) bootstrap a volume.
+role: "server+bootstrap"
+cluster:
+  peers: ["gfs2","gfs3"]
+volume:
+  name: "gv0"
+  type: "replica"         # replica | distribute | disperse
+  replica: 3              # for arbiter: replica: 3, arbiter: 1
+  arbiter: 0              # set to 1 to use replica 3 arbiter 1
+  transport: "tcp"
+  bricks:
+    - "gfs1:/bricks/brick1/brick"
+    - "gfs2:/bricks/brick1/brick"
+    - "gfs3:/bricks/brick1/brick"
+  options:
+    performance.client-io-threads: "on"
+    cluster.lookup-optimize: "on"
