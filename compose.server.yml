@@ -1,0 +1,18 @@
+version: "3.9"
+# Run this on each Gluster node host. Adjust host paths to your brick locations.
+services:
+  glusterd:
+    build: .
+    image: ghcr.io/yourorg/glusterfs-hybrid:ubuntu24
+    container_name: glusterd
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /etc/glusterfs:/etc/glusterfs
+      - /var/lib/glusterd:/var/lib/glusterd
+      - /var/log/glusterfs:/var/log/glusterfs
+      - /data/brick1:/bricks/brick1
+      - ./examples/config.server.yaml:/etc/gluster-container/config.yaml:ro
+    environment:
+      - TZ=Europe/Berlin
+    # Optional healthcheck uses scripts/healthcheck.sh baked into image
