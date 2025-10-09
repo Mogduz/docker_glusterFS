@@ -1,0 +1,7 @@
+# examples/config.server.yaml
+# Start a Gluster server node (no bootstrap). Use same image & config pattern on each node.
+role: "server"
+node:
+  hostname: "gfs1"
+bricks:
+  - path: "/bricks/brick1/brick"   # bind host /data/brick1 -> /bricks/brick1
