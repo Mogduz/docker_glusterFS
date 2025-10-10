@@ -5,7 +5,10 @@ version: "3.9"
 # Run this on each Gluster node host. Adjust host paths to your brick locations.
 services:
   glusterd:
-    build: .
+    build:
+      context: .
+      args:
+        UBUNTU_TAG: "24.04"
     image: ghcr.io/yourorg/glusterfs-hybrid:ubuntu24
     container_name: glusterd
 # Use host networking so Gluster ports bind correctly
