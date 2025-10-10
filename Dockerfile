@@ -12,7 +12,7 @@
 # - Server containers should use `network_mode: host` for proper port handling.
 # - Health checks are included via scripts/healthcheck.sh.
 # -----------------------------------------------------------------------------
-# glusterfs-hybrid: Ubuntu (parametrisierbar) based GlusterFS server/client hybrid
+# glusterfs-hybrid: Ubuntu 24.04 based GlusterFS server/client hybrid
 # Roles: server | server+bootstrap | client | noop
 ARG BASE_IMAGE=ubuntu:24.04
 FROM ${BASE_IMAGE}
