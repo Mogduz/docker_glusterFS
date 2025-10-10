@@ -194,16 +194,10 @@ def start_glusterd() -> subprocess.Popen:
         # Kurz warten: stirbt der Prozess sofort, nächste Variante probieren
         time.sleep(1.0)
         if p.poll() is None:
-            # Sanity-Check gegen verkleideten Client
-            try:
-                help_out = subprocess.run(cmd.split()[0] + ' --help', shell=True, text=True, capture_output=True)
-                help_txt = (help_out.stdout or help_out.stderr or '')
-                if 'volfile-server' in help_txt and 'MOUNT-POINT' in help_txt:
-                    die(27, 'Falsches glusterd-Binary (Client statt Daemon). Prüfe Pakete/PATH.', used_binary=cmd.split()[0])
-            except Exception:
-                pass
+            # Prozess läuft; keine Help-Heuristik während des Laufes.
             log("INFO", "glusterd läuft", cmd=cmd, pid=p.pid)
             return p
+
         else:
             rc = p.returncode
             try:
