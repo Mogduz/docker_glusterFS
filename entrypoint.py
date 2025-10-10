@@ -151,7 +151,7 @@ def _spawn(cmd: str) -> subprocess.Popen:
     return p
 
 def start_glusterd() -> subprocess.Popen:
-    \"\"\"Robustes Starten: probiere -N, --no-daemon, blank; respektiere GLUSTERD_BIN; prüfe falsche Binaries.\"\"\"
+    """Robustes Starten: probiere -N, --no-daemon, blank; respektiere GLUSTERD_BIN; prüfe falsche Binaries."""
     require("sh")
     # Robust preflight to ensure we're pointing at the daemon binary, not the FUSE client.
     # This validates via dpkg ownership and --help heuristics once, *before* we try to spawn.
