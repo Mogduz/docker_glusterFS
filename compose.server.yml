@@ -8,6 +8,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/mnt/data:rw
+    cap_add:
+      - SYS_ADMIN
     entrypoint: ["tini","--","/usr/local/bin/bootstrap.sh"]
     command: ["/etc/gluster-container/config.yaml","--role","server"]
     environment:
