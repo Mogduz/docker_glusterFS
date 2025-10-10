@@ -76,7 +76,7 @@ def which(cmd: str) -> str | None:
 
 
 def preflight_glusterd() -> str:
-    """Prüft glusterd-Binary und gibt den Pfad zurück."""
+    """Prüft glusterd-Binary und gibt den Pfad zurück oder beendet mit klarer Meldung."""
     cand = os.environ.get('GLUSTERD_BIN','').strip() or 'glusterd'
     cp = subprocess.run(f"command -v {cand}", shell=True, text=True, capture_output=True)
     if cp.returncode != 0 or not (cp.stdout.strip()):
@@ -85,12 +85,13 @@ def preflight_glusterd() -> str:
     real = os.path.realpath(path)
     help_out = subprocess.run(f"{shlex.quote(path)} --help", shell=True, text=True, capture_output=True)
     help_txt = (help_out.stdout or help_out.stderr or '')
-    pkg_out = subprocess.run(f"dpkg -S {shlex.quote(real)}", shell=True, text=True, capture_output=True)
-    pkg = (pkg_out.stdout or pkg_out.stderr or '').strip()
-    # Client-Help-Erkennung
+    # Wenn Help-Ausgabe wie Client aussieht, sofort abbrechen
     if ('volfile' in help_txt) or ('MOUNT-POINT' in help_txt):
         die(27, 'Falsches glusterd-Binary (Client-Help erkannt) – prüfe Pakete/PATH.',
             found=path, realpath=real, help=(help_txt.splitlines()[:6]))
+    # Paketzuordnung (heuristisch, nicht hart)
+    pkg_out = subprocess.run(f"dpkg -S {shlex.quote(real)}", shell=True, text=True, capture_output=True)
+    pkg = (pkg_out.stdout or pkg_out.stderr or '').strip()
     bn = os.path.basename(real)
     if bn == 'glusterfsd' and 'glusterfs-common' in pkg:
         log('INFO', 'Preflight OK (glusterd -> glusterfsd via glusterfs-common)', path=path, realpath=real, package=pkg[:120])
@@ -141,7 +142,7 @@ def load_config(path: str) -> dict:
 
 
 
-# ----------------------------- State bootstrap under /mnt/data -----------------------------
+# ----------------------------- Single-mount autobootstrap (/mnt/data) -----------------------------
 def _is_dir_empty(p: str) -> bool:
     try:
         return os.path.isdir(p) and not any(os.scandir(p))
@@ -152,7 +153,7 @@ def _ensure_dir(p: str):
     os.makedirs(p, exist_ok=True)
 
 def _ensure_symlink(target: str, link_path: str):
-    """Create link_path -> target idempotently; move existing path aside if needed."""
+    """idempotent symlink creation; backs up existing real paths to .bak-<ts>"""
     if os.path.islink(link_path):
         cur = os.readlink(link_path)
         if cur == target:
@@ -171,7 +172,7 @@ def _ensure_symlink(target: str, link_path: str):
     os.symlink(target, link_path)
 
 def _bootstrap_state_tree(root: str):
-    """If root is missing or empty, create minimal tree and a default config."""
+    """Create minimal tree and default config when root is empty/missing."""
     if not os.path.isdir(root) or _is_dir_empty(root):
         log("INFO", "Initialisiere zentrales Verzeichnis", root=root)
         for d in [
@@ -209,15 +210,13 @@ def _xattr_selftest(brick_dir: str):
     probe = os.path.join(brick_dir, ".xattr_probe")
     try:
         _ensure_dir(brick_dir)
+        # Tools optional; warn if missing
         if not shutil.which("setfattr") or not shutil.which("getfattr"):
             log("WARN", "xattr tools nicht gefunden (setfattr/getfattr); Selftest übersprungen")
             return
         with open(probe, "wb") as f:
             f.write(b"probe")
         subprocess.run(["setfattr", "-n", "user.test", "-v", "1", probe], check=True)
-        cp = subprocess.run(["getfattr", "-n", "user.test", probe], capture_output=True, text=True)
-        if cp.returncode != 0:
-            log("WARN", "user.* xattr test fehlgeschlagen", rc=cp.returncode, err=cp.stderr.strip())
         subprocess.run(["setfattr", "-n", "trusted.glusterfs.probe", "-v", "1", probe], check=True)
     except Exception as e:
         log("WARN", "xattr smoke-test fehlgeschlagen (prüfe ext4 Mount-Optionen user_xattr,acl)", error=repr(e))
@@ -418,9 +417,6 @@ def main():
     role = (args.role or cfg.get("role") or "noop").lower()
 
     log("INFO", "Starte Entrypoint", role=role, config=args.config, dry_run=DRY_RUN)
-    _bootstrap_state_tree(MOUNT_ROOT)
-    _link_system_paths(MOUNT_ROOT)
-    _xattr_selftest(os.path.join(MOUNT_ROOT, 'bricks/brick1/gv0'))
     _bootstrap_state_tree(MOUNT_ROOT)
     _link_system_paths(MOUNT_ROOT)
     _xattr_selftest(os.path.join(MOUNT_ROOT, 'bricks/brick1/gv0'))
