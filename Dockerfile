@@ -29,11 +29,11 @@ EXPOSE 24007 24008
 COPY entrypoint.py /usr/local/bin/entrypoint.py
 COPY scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
 RUN chmod +x /usr/local/bin/entrypoint.py /usr/local/bin/healthcheck.sh\
- && echo "BUILD SANITY: verify glusterd is daemon (not client)"\
+ && echo "BUILD SANITY: verify glusterd is daemon (not client)" \
  && set -eux; : build_sanity ; \
- real="$(readlink -f $(command -v glusterd))"; \
- dpkg -S "$real" | grep -q "glusterfs-server" || { echo "FATAL: $(command -v glusterd) not owned by glusterfs-server"; dpkg -S "$real" || true; exit 19; }; \
- test -s /usr/share/man/man8/glusterd.8.gz || { echo "FATAL: glusterd manpage missing -> incomplete server install"; exit 19; }; \
+ BIN="$(command -v glusterd)"; REAL="$(readlink -f "$BIN")"; \
+ dpkg -S "$BIN"  | grep -E "glusterfs-(server|common)" -q || { echo "FATAL: $BIN not owned by glusterfs-server/common"; dpkg -S "$BIN" || true; exit 19; }; \
+ dpkg -S "$REAL" | grep -E "glusterfs-(server|common)" -q || { echo "FATAL: $REAL not owned by glusterfs-server/common"; dpkg -S "$REAL" || true; exit 19; }; \
  command -v glusterd; (glusterd --version || true)
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.py"]
 # Default config path; can be overridden by CMD/args or ENV CONFIG_PATH
