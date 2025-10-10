@@ -1,14 +1,7 @@
-# Single-mount autobootstrap (/mnt/data)
+# Single central mount with runtime bootstrap
 
-On container start:
-- If `/mnt/data` is missing **or empty**, the container creates:
-  - `etc/glusterfs`, `etc/gluster-container`, `var/lib/glusterd`, `log/glusterfs`, `bricks/brick1/gv0`
-  - `etc/gluster-container/config.yaml` with `role: server` (if missing)
-- It symlinks system paths to the tree under `/mnt/data` (idempotent).
-- If everything exists, bootstrap is skipped.
-
-Compose:
-  volumes:
-    - ./data:/mnt/data:rw
-
-You can override the target via `MOUNT_ROOT` env (default `/mnt/data`).
+This repo includes `scripts/bootstrap.sh` that runs **before** the Python entrypoint:
+- If `/mnt/data` is empty/missing, it creates the required tree and a minimal config (`role: server`).
+- Symlinks `/etc/glusterfs`, `/etc/gluster-container`, `/var/lib/glusterd`, `/var/log/glusterfs`, `/bricks/brick1` to that tree.
+- Optionally smoke-tests xattrs (non-fatal).
+Compose mounts one folder: `./data:/mnt/data` and sets the entrypoint to `bootstrap.sh`.
