@@ -27,7 +27,15 @@ VOLUME ["/etc/glusterfs", "/var/lib/glusterd", "/var/log/glusterfs", "/bricks"]
 EXPOSE 24007 24008
 COPY entrypoint.py /usr/local/bin/entrypoint.py
 COPY scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
-RUN chmod +x /usr/local/bin/entrypoint.py /usr/local/bin/healthcheck.sh
+RUN chmod +x /usr/local/bin/entrypoint.py /usr/local/bin/healthcheck.sh\
+ && echo "BUILD SANITY: verify glusterd is daemon (not client)"\
+ && (glusterd --help >/tmp/glusterd_help 2>&1 || true)\
+ && if grep -q "MOUNT-POINT" /tmp/glusterd_help; then\
+      echo "FATAL: glusterd appears to be the *client* (glusterfs). Ensure glusterfs-server is installed." >&2;\
+      exit 19;\
+    fi\
+ && command -v glusterd\
+ && (glusterd --version || true)
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.py"]
 # Default config path; can be overridden by CMD/args or ENV CONFIG_PATH
 CMD ["/etc/gluster-container/config.yaml"]
