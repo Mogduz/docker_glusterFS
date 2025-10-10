@@ -73,8 +73,9 @@ def which(cmd: str) -> str | None:
 
 
 def preflight_glusterd() -> str:
-    """
-    Prüft glusterd-Binary und gibt den Pfad zurück; bricht bei Client-Help ab.
+    """Validiert das glusterd-Binary robust und gibt den Pfad zurück.
+    Reihenfolge: (1) Paket-Zuordnung (dpkg) → (2) Help-Heuristik als Fallback.
+    So vermeiden wir False-Positives auf Systemen, wo glusterd ein Symlink auf glusterfsd ist.
     """
     cand = os.environ.get('GLUSTERD_BIN','').strip() or 'glusterd'
     cp = subprocess.run(f"command -v {cand}", shell=True, text=True, capture_output=True)
@@ -82,26 +83,35 @@ def preflight_glusterd() -> str:
         die(28, "glusterd nicht im PATH gefunden. Ist glusterfs-server installiert?", PATH=os.environ.get('PATH'))
     path = cp.stdout.strip().splitlines()[0]
     real = os.path.realpath(path)
-    help_out = subprocess.run(f"{shlex.quote(path)} --help", shell=True, text=True, capture_output=True)
-    help_txt = (help_out.stdout or help_out.stderr or '')
-    # Client-Help-Erkennung
-    if ('volfile' in help_txt) or ('MOUNT-POINT' in help_txt):
-        die(27, 'Falsches glusterd-Binary (Client-Help erkannt) – prüfe Pakete/PATH.',
-            found=path, realpath=real, help=(help_txt.splitlines()[:6]))
-    # Paketzuordnung (Heuristik)
-    pkg_out = subprocess.run(f"dpkg -S {shlex.quote(real)}", shell=True, text=True, capture_output=True)
-    pkg = (pkg_out.stdout or pkg_out.stderr or '').strip()
+
+    # (1) Paketzuordnung (bevor wir --help inspizieren)
+    try:
+        pkg_out = subprocess.run(f"dpkg -S {shlex.quote(real)}", shell=True, text=True, capture_output=True)
+        pkg = (pkg_out.stdout or pkg_out.stderr or '').strip()
+    except Exception:
+        pkg = ""
+
     bn = os.path.basename(real)
-    if bn == 'glusterfsd' and 'glusterfs-common' in pkg:
+    if (bn == 'glusterfsd' and 'glusterfs-common' in pkg):
         log('INFO', 'Preflight OK (glusterd -> glusterfsd via glusterfs-common)', path=path, realpath=real, package=pkg[:120])
         return path
     if 'glusterfs-server' in pkg:
         log('INFO', 'Preflight OK: glusterd from glusterfs-server', path=path, realpath=real, package=pkg[:120])
         return path
-    if ('glusterfs-common' in pkg or 'glusterfs-server' in pkg):
-        log('WARN', 'Preflight: ungewöhnliche Help-Ausgabe, Paket wirkt plausibel', path=path, realpath=real, package=pkg[:120])
+    if ('glusterfs-common' in pkg or 'glusterfs-server' in pkg) and bn in ('glusterd','glusterfsd'):
+        log('WARN', 'Preflight: ungewöhnliche Zuordnung; Paket wirkt plausibel', path=path, realpath=real, package=pkg[:120])
         return path
-    die(27, 'glusterd-Paketzuordnung unplausibel', found=path, realpath=real, package=pkg[:200])
+
+    # (2) Help-Heuristik nur als Fallback/Beweis für echte Fehlkonfiguration
+    help_out = subprocess.run(f"{shlex.quote(path)} --help", shell=True, text=True, capture_output=True)
+    help_txt = (help_out.stdout or help_out.stderr or '')
+    if ('volfile' in help_txt) or ('MOUNT-POINT' in help_txt):
+        die(27, 'Falsches glusterd-Binary (Client-Help erkannt) – prüfe Pakete/PATH.',
+            found=path, realpath=real, help=(help_txt.splitlines()[:6]))
+
+    # Wenn weder Paket-Zuordnung plausibel noch Help klar Client sagt, geben wir den Pfad zurück und lassen den Laufzeit-Start entscheiden.
+    log('WARN', 'Preflight: Paketzuordnung unklar, Help nicht eindeutig – akzeptiere vorsichtig', path=path, realpath=real, package=pkg[:120])
+    return path
 
 
 def require(cmd: str):
