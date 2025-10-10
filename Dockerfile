@@ -28,7 +28,8 @@ VOLUME ["/etc/glusterfs", "/var/lib/glusterd", "/var/log/glusterfs", "/bricks"]
 EXPOSE 24007 24008
 COPY entrypoint.py /usr/local/bin/entrypoint.py
 COPY scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
-RUN chmod +x /usr/local/bin/entrypoint.py /usr/local/bin/healthcheck.sh\
+COPY scripts/bootstrap.sh /usr/local/bin/bootstrap.sh
+RUN chmod +x /usr/local/bin/entrypoint.py /usr/local/bin/healthcheck.sh /usr/local/bin/bootstrap.sh\
  && echo "BUILD SANITY: verify glusterd is daemon (not client)" \
  && set -eux; : build_sanity ; \
  BIN="$(command -v glusterd)"; REAL="$(readlink -f "$BIN")"; \
