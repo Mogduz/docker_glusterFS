@@ -72,6 +72,7 @@ def which(cmd: str) -> str | None:
     return None
 
 
+
 def preflight_glusterd() -> str:
     """
     Prüft, welche glusterd-Binary verwendet wird, ob sie ausführbar ist
@@ -92,22 +93,23 @@ def preflight_glusterd() -> str:
     # Zugehöriges Paket ermitteln
     pkg_out = subprocess.run(f"dpkg -S {shlex.quote(real)}", shell=True, text=True, capture_output=True)
     pkg = (pkg_out.stdout or pkg_out.stderr or '').strip()
-    # Entscheide anhand realpath + Paket: glusterfsd (common) ist OK; glusterfs (client) NICHT.
+    # Wenn die Hilfe nach *Client* aussieht (volfile/MOUNT-POINT), ist das Binary falsch
+    if ('volfile' in help_txt) or ('MOUNT-POINT' in help_txt):
+        die(27, 'Falsches glusterd-Binary (Client-Help erkannt) – prüfe Pakete/PATH.',
+            found=path, realpath=real, help=(help_txt.splitlines()[:6]))
+    # Heuristik über Paketzuordnung
     bn = os.path.basename(real)
-    if 'glusterfs' == bn and ('volfile-server' in help_txt or 'MOUNT-POINT' in help_txt):
-        die(27, 'Falsches glusterd-Binary (Client statt Daemon) – prüfe Pakete/PATH.', found=path, realpath=real, package=pkg[:120])
     if bn == 'glusterfsd' and 'glusterfs-common' in pkg:
         log('INFO', 'Preflight OK (glusterd -> glusterfsd via glusterfs-common)', path=path, realpath=real, package=pkg[:120])
         return path
     if 'glusterfs-server' in pkg:
         log('INFO', 'Preflight OK: glusterd from glusterfs-server', path=path, realpath=real, package=pkg[:120])
         return path
-    # Fallback: nur warnen, wenn Help komisch ist, aber Paket plausibel
+    # Fallback: warnen, wenn Help komisch ist, aber Paket plausibel wirkt
     if ('glusterfs-common' in pkg or 'glusterfs-server' in pkg):
         log('WARN', 'Preflight: ungewöhnliche Help-Ausgabe, Paket wirkt plausibel', path=path, realpath=real, package=pkg[:120])
         return path
     die(27, 'glusterd-Paketzuordnung unplausibel', found=path, realpath=real, package=pkg[:200])
-
 
 def require(cmd: str):
     if not which(cmd):
@@ -158,8 +160,18 @@ def _spawn(cmd: str) -> subprocess.Popen:
 def start_glusterd() -> subprocess.Popen:
     """Robustes Starten: probiere -N, --no-daemon, blank; respektiere GLUSTERD_BIN; prüfe falsche Binaries."""
     require("sh")
+    # Preflight: ermittele und verifiziere glusterd-Binary
+    resolved = preflight_glusterd()
+    if not os.environ.get('GLUSTERD_BIN'):
+        os.environ['GLUSTERD_BIN'] = resolved
+    # Preflight: ermittele und verifiziere glusterd-Binary
+    resolved = preflight_glusterd()
+    if not os.environ.get('GLUSTERD_BIN'):
+        os.environ['GLUSTERD_BIN'] = resolved
     override = os.environ.get('GLUSTERD_BIN','').strip()
     candidates_raw: list[str] = []
+    candidates_raw += [f"{os.environ.get('GLUSTERD_BIN', resolved)} -N", f"{os.environ.get('GLUSTERD_BIN', resolved)} --no-daemon", os.environ.get('GLUSTERD_BIN', resolved)]
+    candidates_raw += [f"{os.environ.get('GLUSTERD_BIN', resolved)} -N", f"{os.environ.get('GLUSTERD_BIN', resolved)} --no-daemon", os.environ.get('GLUSTERD_BIN', resolved)]
     if override:
         candidates_raw += [f"{override} -N", f"{override} --no-daemon", f"{override}"]
     candidates_raw += [
