@@ -1,6 +1,14 @@
-
-role: client
+# Example configuration: config.client.yaml
+# Copy and adapt these values to match your environment.
+# This file is read by /usr/local/bin/entrypoint.py inside the container.
+# examples/config.client.yaml
+# Client: mount a Gluster volume into /mnt/glusterFS INSIDE the container;
+# thanks to mount propagation (rshared), the mount will appear on the host at the
+# same path for as long as the container runs.
+# Role for this container: server | server+bootstrap | client | noop
+role: "client"
 mounts:
-  - remote: gluster1:/gv0       # oder IP:/gv0
-    target: /mnt/gluster
-    opts: "allow_other,_netdev"
+  - remote: "gfs1:/gv0"
+    target: "/mnt/glusterFS"
+# Additional mount options passed to the GlusterFS client
+    opts: "backupvolfile-server=gfs2,_netdev,log-level=INFO"
