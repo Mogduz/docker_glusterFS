@@ -151,12 +151,21 @@ def _spawn(cmd: str) -> subprocess.Popen:
     return p
 
 def start_glusterd() -> subprocess.Popen:
-    """Robustes Starten: probiere -N, --no-daemon, blank; respektiere GLUSTERD_BIN; prüfe falsche Binaries."""
+    \"\"\"Robustes Starten: probiere -N, --no-daemon, blank; respektiere GLUSTERD_BIN; prüfe falsche Binaries.\"\"\"
     require("sh")
+    # Robust preflight to ensure we're pointing at the daemon binary, not the FUSE client.
+    # This validates via dpkg ownership and --help heuristics once, *before* we try to spawn.
+    try:
+        preferred_bin = preflight_glusterd()
+    except SystemExit:
+        # preflight_glusterd() already logged a detailed error and exited when wrong
+        raise
     override = os.environ.get('GLUSTERD_BIN','').strip()
     candidates_raw: list[str] = []
     if override:
         candidates_raw += [f"{override} -N", f"{override} --no-daemon", f"{override}"]
+    else:
+        candidates_raw += [f"{preferred_bin} -N", f"{preferred_bin} --no-daemon", f"{preferred_bin}"]
     candidates_raw += [
         '/usr/sbin/glusterd -N', '/usr/sbin/glusterd --no-daemon', '/usr/sbin/glusterd',
         '/usr/local/sbin/glusterd -N', '/usr/local/sbin/glusterd --no-daemon', '/usr/local/sbin/glusterd',
