@@ -14,7 +14,8 @@
 # -----------------------------------------------------------------------------
 # glusterfs-hybrid: Ubuntu 24.04 based GlusterFS server/client hybrid
 # Roles: server | server+bootstrap | client | noop
-FROM ubuntu:24.04
+ARG BASE_IMAGE=ubuntu:24.04
+FROM ${BASE_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive TZ=Europe/Berlin
 RUN apt-get update && apt-get install -y --no-install-recommends \
       glusterfs-server glusterfs-client xfsprogs attr python3 python3-yaml tini ca-certificates \
@@ -29,13 +30,11 @@ COPY entrypoint.py /usr/local/bin/entrypoint.py
 COPY scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
 RUN chmod +x /usr/local/bin/entrypoint.py /usr/local/bin/healthcheck.sh\
  && echo "BUILD SANITY: verify glusterd is daemon (not client)"\
- && (glusterd --help >/tmp/glusterd_help 2>&1 || true)\
- && if grep -q "MOUNT-POINT" /tmp/glusterd_help; then\
-      echo "FATAL: glusterd appears to be the *client* (glusterfs). Ensure glusterfs-server is installed." >&2;\
-      exit 19;\
-    fi\
- && command -v glusterd\
- && (glusterd --version || true)
+ && set -eux; : build_sanity ; \
+ real="$(readlink -f $(command -v glusterd))"; \
+ dpkg -S "$real" | grep -q "glusterfs-server" || { echo "FATAL: $(command -v glusterd) not owned by glusterfs-server"; dpkg -S "$real" || true; exit 19; }; \
+ test -s /usr/share/man/man8/glusterd.8.gz || { echo "FATAL: glusterd manpage missing -> incomplete server install"; exit 19; }; \
+ command -v glusterd; (glusterd --version || true)
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.py"]
 # Default config path; can be overridden by CMD/args or ENV CONFIG_PATH
 CMD ["/etc/gluster-container/config.yaml"]
