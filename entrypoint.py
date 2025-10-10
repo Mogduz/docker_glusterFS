@@ -13,8 +13,6 @@ import signal
 import subprocess
 import sys
 import threading
-import pathlib
-import shutil
 import time
 import shlex
 from datetime import datetime, timezone
@@ -26,7 +24,6 @@ except Exception as e:
     sys.exit(90)
 
 CONFIG_PATH_DEFAULT = "/etc/gluster-container/config.yaml"
-MOUNT_ROOT = os.environ.get("MOUNT_ROOT", "/mnt/data").rstrip("/")
 
 # PATH erweitern, falls sbin-Verzeichnisse fehlen
 os.environ['PATH'] = os.environ.get('PATH', '') or '/usr/sbin:/usr/bin:/sbin:/bin'
@@ -74,35 +71,41 @@ def which(cmd: str) -> str | None:
             return cand
     return None
 
-
 def preflight_glusterd() -> str:
-    """Prüft glusterd-Binary und gibt den Pfad zurück oder beendet mit klarer Meldung."""
+    """
+    Prüft, welche glusterd-Binary verwendet wird, ob sie ausführbar ist
+    und ob es sich NICHT um den glusterfs-Client handelt.
+    Gibt den aufzulösenden Pfad zurück oder bricht mit klarer Meldung ab.
+    """
     cand = os.environ.get('GLUSTERD_BIN','').strip() or 'glusterd'
+    # Pfad auflösen
     cp = subprocess.run(f"command -v {cand}", shell=True, text=True, capture_output=True)
     if cp.returncode != 0 or not (cp.stdout.strip()):
         die(28, "glusterd nicht im PATH gefunden. Ist glusterfs-server installiert?", PATH=os.environ.get('PATH'))
     path = cp.stdout.strip().splitlines()[0]
+    # Realpath ermitteln (Symlink-Fallen)
     real = os.path.realpath(path)
+    # Hilfetext inspizieren
     help_out = subprocess.run(f"{shlex.quote(path)} --help", shell=True, text=True, capture_output=True)
     help_txt = (help_out.stdout or help_out.stderr or '')
-    # Wenn Help-Ausgabe wie Client aussieht, sofort abbrechen
-    if ('volfile' in help_txt) or ('MOUNT-POINT' in help_txt):
-        die(27, 'Falsches glusterd-Binary (Client-Help erkannt) – prüfe Pakete/PATH.',
-            found=path, realpath=real, help=(help_txt.splitlines()[:6]))
-    # Paketzuordnung (heuristisch, nicht hart)
-    pkg_out = subprocess.run(f"dpkg -S {shlex.quote(real)}", shell=True, text=True, capture_output=True)
-    pkg = (pkg_out.stdout or pkg_out.stderr or '').strip()
-    bn = os.path.basename(real)
-    if bn == 'glusterfsd' and 'glusterfs-common' in pkg:
-        log('INFO', 'Preflight OK (glusterd -> glusterfsd via glusterfs-common)', path=path, realpath=real, package=pkg[:120])
-        return path
-    if 'glusterfs-server' in pkg:
-        log('INFO', 'Preflight OK: glusterd from glusterfs-server', path=path, realpath=real, package=pkg[:120])
-        return path
-    if ('glusterfs-common' in pkg or 'glusterfs-server' in pkg):
-        log('WARN', 'Preflight: ungewöhnliche Help-Ausgabe, Paket wirkt plausibel', path=path, realpath=real, package=pkg[:120])
-        return path
-    die(27, 'glusterd-Paketzuordnung unplausibel', found=path, realpath=real, package=pkg[:200])
+pkg_out = subprocess.run(f"dpkg -S {shlex.quote(real)}", shell=True, text=True, capture_output=True)
+pkg = (pkg_out.stdout or pkg_out.stderr or '').strip()
+# Entscheide anhand realpath + Paket: glusterfsd (common) ist OK; glusterfs (client) NICHT.
+bn = os.path.basename(real)
+if 'glusterfs' == bn and ('volfile-server' in help_txt or 'MOUNT-POINT' in help_txt):
+    die(27, 'Falsches glusterd-Binary (Client statt Daemon). Prüfe Pakete/PATH.', found=path, realpath=real, package=pkg[:120])
+if bn == 'glusterfsd' and 'glusterfs-common' in pkg:
+    log('INFO', 'Preflight OK (glusterd -> glusterfsd via glusterfs-common)', path=path, realpath=real, package=pkg[:120])
+    return path
+if 'glusterfs-server' in pkg:
+    log('INFO', 'Preflight OK: glusterd from glusterfs-server', path=path, realpath=real, package=pkg[:120])
+    return path
+# Fallback: nur warnen, wenn Help komisch ist, aber Paket plausibel
+if ('glusterfs-common' in pkg or 'glusterfs-server' in pkg):
+    log('WARN', 'Preflight: ungewöhnliche Help-Ausgabe, Paket wirkt plausibel', path=path, realpath=real, package=pkg[:120])
+    return path
+die(27, 'glusterd-Paketzuordnung unplausibel', found=path, realpath=real, package=pkg[:200])
+
 
 def require(cmd: str):
     if not which(cmd):
@@ -139,92 +142,6 @@ def load_config(path: str) -> dict:
         return cfg
     except Exception as e:
         die(22, "Konnte YAML nicht lesen", path=path, error=repr(e))
-
-
-
-# ----------------------------- Single-mount autobootstrap (/mnt/data) -----------------------------
-def _is_dir_empty(p: str) -> bool:
-    try:
-        return os.path.isdir(p) and not any(os.scandir(p))
-    except FileNotFoundError:
-        return True
-
-def _ensure_dir(p: str):
-    os.makedirs(p, exist_ok=True)
-
-def _ensure_symlink(target: str, link_path: str):
-    """idempotent symlink creation; backs up existing real paths to .bak-<ts>"""
-    if os.path.islink(link_path):
-        cur = os.readlink(link_path)
-        if cur == target:
-            return
-        else:
-            os.unlink(link_path)
-    elif os.path.exists(link_path):
-        ts = time.strftime("%Y%m%d-%H%M%S")
-        backup = f"{link_path}.bak-{ts}"
-        try:
-            shutil.move(link_path, backup)
-            log("WARN", "Pfad verschoben für Symlink-Setup", old=link_path, backup=backup)
-        except Exception as e:
-            die(24, "Konnte bestehenden Pfad nicht sichern", path=link_path, error=repr(e))
-    _ensure_dir(os.path.dirname(link_path))
-    os.symlink(target, link_path)
-
-def _bootstrap_state_tree(root: str):
-    """Create minimal tree and default config when root is empty/missing."""
-    if not os.path.isdir(root) or _is_dir_empty(root):
-        log("INFO", "Initialisiere zentrales Verzeichnis", root=root)
-        for d in [
-            "etc/glusterfs",
-            "etc/gluster-container",
-            "var/lib/glusterd",
-            "log/glusterfs",
-            "bricks/brick1/gv0",
-        ]:
-            _ensure_dir(os.path.join(root, d))
-        cfg_path = os.path.join(root, "etc/gluster-container/config.yaml")
-        if not os.path.exists(cfg_path):
-            try:
-                with open(cfg_path, "w", encoding="utf-8") as f:
-                    f.write("role: server\n")
-                log("INFO", "Standard-Config geschrieben", path=cfg_path)
-            except Exception as e:
-                die(21, "Konnte Standard-Config nicht schreiben", path=cfg_path, error=repr(e))
-    else:
-        log("INFO", "Zentrales Verzeichnis vorhanden, kein Bootstrap nötig", root=root)
-
-def _link_system_paths(root: str):
-    mapping = {
-        "/etc/glusterfs": os.path.join(root, "etc/glusterfs"),
-        "/etc/gluster-container": os.path.join(root, "etc/gluster-container"),
-        "/var/lib/glusterd": os.path.join(root, "var/lib/glusterd"),
-        "/var/log/glusterfs": os.path.join(root, "log/glusterfs"),
-        "/bricks/brick1": os.path.join(root, "bricks/brick1"),
-    }
-    for dst, src in mapping.items():
-        _ensure_dir(src)
-        _ensure_symlink(src, dst)
-
-def _xattr_selftest(brick_dir: str):
-    probe = os.path.join(brick_dir, ".xattr_probe")
-    try:
-        _ensure_dir(brick_dir)
-        # Tools optional; warn if missing
-        if not shutil.which("setfattr") or not shutil.which("getfattr"):
-            log("WARN", "xattr tools nicht gefunden (setfattr/getfattr); Selftest übersprungen")
-            return
-        with open(probe, "wb") as f:
-            f.write(b"probe")
-        subprocess.run(["setfattr", "-n", "user.test", "-v", "1", probe], check=True)
-        subprocess.run(["setfattr", "-n", "trusted.glusterfs.probe", "-v", "1", probe], check=True)
-    except Exception as e:
-        log("WARN", "xattr smoke-test fehlgeschlagen (prüfe ext4 Mount-Optionen user_xattr,acl)", error=repr(e))
-    finally:
-        try:
-            os.remove(probe)
-        except Exception:
-            pass
 
 # ----------------------------- Role logic -----------------------------
 def _spawn(cmd: str) -> subprocess.Popen:
@@ -417,9 +334,6 @@ def main():
     role = (args.role or cfg.get("role") or "noop").lower()
 
     log("INFO", "Starte Entrypoint", role=role, config=args.config, dry_run=DRY_RUN)
-    _bootstrap_state_tree(MOUNT_ROOT)
-    _link_system_paths(MOUNT_ROOT)
-    _xattr_selftest(os.path.join(MOUNT_ROOT, 'bricks/brick1/gv0'))
 
     if role == "noop":
         while not stop_event.wait(1):
