@@ -2,14 +2,13 @@ services:
   glusterd:
     build:
       context: .
-      # If your Dockerfile supports it, you can pass a base tag:
-      # args:
-      #   UBUNTU_TAG: "22.04"
     image: ghcr.io/yourorg/glusterfs-hybrid:ubuntu24
     container_name: glusterd
     network_mode: host
     restart: unless-stopped
     volumes:
       - ./data:/mnt/data:rw
+    entrypoint: ["tini","--","/usr/local/bin/bootstrap.sh"]
+    command: ["/etc/gluster-container/config.yaml","--role","server"]
     environment:
       TZ: Europe/Berlin
