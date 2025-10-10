@@ -2,7 +2,7 @@ services:
   glusterd:
     build:
       context: .
-    image: ghcr.io/yourorg/glusterfs-hybrid:ubuntu24
+    image: ghcr.io/yourorg/glusterfs-hybrid:ubuntu22
     container_name: glusterd
     network_mode: host
     restart: unless-stopped
