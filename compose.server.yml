@@ -1,18 +1,15 @@
-# Compose file for running a Gluster server node.
-# Run this on each Gluster host; bind-mount all brick directories from the host.
-# Use together with examples/config.server.yaml (or server-bootstrap for initial bring-up).
-version: "3.9"
-# Run this on each Gluster node host. Adjust host paths to your brick locations.
 services:
   glusterd:
-    build: .
+    build:
+      context: .
+      # If your Dockerfile supports it, you can pass a base tag:
+      # args:
+      #   UBUNTU_TAG: "22.04"
     image: ghcr.io/yourorg/glusterfs-hybrid:ubuntu24
     container_name: glusterd
-# Use host networking so Gluster ports bind correctly
     network_mode: host
     restart: unless-stopped
-    \1      - ./data:/mnt/data:rw
-      - ./examples/config.server.yaml:/etc/gluster-container/config.yaml:ro
+    volumes:
+      - ./data:/mnt/data:rw
     environment:
-      - TZ=Europe/Berlin
-    # Optional healthcheck uses scripts/healthcheck.sh baked into image
+      TZ: Europe/Berlin
