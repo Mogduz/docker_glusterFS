@@ -27,6 +27,8 @@ docker exec -it gluster1 gluster volume info gv0
 - `ADDRESS_FAMILY` – `inet` (IPv4) oder `inet6`
 - `PORT_RANGE` – z. B. `49152-49251`
 - `REQUIRE_ALL_PEERS` – `1` (Default) = sichere Volume-Erstellung nur bei vollem Quorum
+- `PEER_WAIT_SECS` – `-1`=unendlich, `0`=nicht warten, `>0`=Sekunden (Default `120`)
+- `PEER_WAIT_INTERVAL` – Abfrageintervall in Sekunden (Default `1`)
 - `ALLOW_FORCE_CREATE` – `0` (Default); nur bewusst aktivieren
 - `AUTO_ADD_BRICK` / `ADD_BRICK_SET` – vorsichtige Brick-Erweiterung (Hinweise im Script)
 
