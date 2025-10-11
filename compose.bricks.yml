@@ -1,0 +1,100 @@
+version: "3.9"
+name: gluster-lab
+
+services:
+  gluster1:
+    build: .
+    container_name: gluster1
+    hostname: gluster1
+    restart: unless-stopped
+    environment:
+      - MODE=init
+      - VOLNAME=gv0
+      - VTYPE=replica      # oder disperse
+      - REPLICA=3
+      - BRICK_PATH=/bricks/brick1
+      - PEERS=gluster1,gluster2,gluster3
+      - REQUIRE_ALL_PEERS=1
+      - ALLOW_FORCE_CREATE=0
+      - REQUIRE_MOUNTED_BRICK=0
+      - ADDRESS_FAMILY=inet
+      - PORT_RANGE=49152-49251
+      - LOG_LEVEL=WARNING
+    volumes:
+      - ./data/gluster1/brick1:/bricks/brick1
+      - ./state/gluster1:/var/lib/glusterd
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks: [gluster-net]
+    depends_on:
+      gluster2:
+        condition: service_healthy
+      gluster3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null && gluster volume status gv0 | grep -qi shd"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  gluster2:
+    build: .
+    container_name: gluster2
+    hostname: gluster2
+    restart: unless-stopped
+    environment:
+      - MODE=brick
+      - BRICK_PATH=/bricks/brick1
+      - PEERS=gluster1,gluster2,gluster3
+      - REQUIRE_ALL_PEERS=1
+      - REQUIRE_MOUNTED_BRICK=0
+      - ADDRESS_FAMILY=inet
+      - PORT_RANGE=49152-49251
+      - LOG_LEVEL=WARNING
+    volumes:
+      - ./data/gluster2/brick1:/bricks/brick1
+      - ./state/gluster2:/var/lib/glusterd
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks: [gluster-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  gluster3:
+    build: .
+    container_name: gluster3
+    hostname: gluster3
+    restart: unless-stopped
+    environment:
+      - MODE=brick
+      - BRICK_PATH=/bricks/brick1
+      - PEERS=gluster1,gluster2,gluster3
+      - REQUIRE_ALL_PEERS=1
+      - REQUIRE_MOUNTED_BRICK=0
+      - ADDRESS_FAMILY=inet
+      - PORT_RANGE=49152-49251
+      - LOG_LEVEL=WARNING
+    volumes:
+      - ./data/gluster3/brick1:/bricks/brick1
+      - ./state/gluster3:/var/lib/glusterd
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks: [gluster-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+networks:
+  gluster-net:
+    name: gluster-net
