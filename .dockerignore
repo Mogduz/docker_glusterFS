@@ -1,7 +1,0 @@
-# Files/directories that should not be sent to the Docker build context
-**/__pycache__/
-*.pyc
-*.pyo
-*.swp
-.git
-.gitignore
