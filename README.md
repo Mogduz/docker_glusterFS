@@ -1,49 +1,44 @@
-# GlusterFS Docker – robuste Entrypoints & Healthchecks
+# GlusterFS Docker (hardened v3)
 
-  Dieses Repo bringt einen gesprächigen `entrypoint.py`, der:
-  - `glusterd` robust startet (probiert `-N`, `--no-daemon`, blank; oder via `GLUSTERD_BIN`),
-  - falsche Binaries erkennt (Client vs Daemon) und explizit abbricht,
-  - strukturierte Logs (Text/JSON) und saubere Exit-Codes liefert,
-  - als `client` FUSE-Mounts idempotent managed.
+Ein kompaktes Repo, um ein GlusterFS-Cluster mit **einem Image, zwei Modi** zu betreiben:
+- `MODE=brick`: nur Brick/Server bereitstellen
+- `MODE=init`: Brick + Cluster- und Volume-Initialisierung
 
-  ## Wichtige ENV Variablen
-  - `ROLE` = `server` | `server+bootstrap` | `client` | `noop`
-  - `CONFIG_PATH` (default `/etc/gluster-container/config.yaml`)
-  - `LOG_FORMAT` = `text` | `json`
-  - `LOG_LEVEL`  = `DEBUG` | `INFO` | `WARN` | `ERROR`
-  - `DRY_RUN`    = `1` → führt nichts aus, loggt nur
-  - `GLUSTERD_BIN` = Pfad zur `glusterd`-Binary (default `/usr/sbin/glusterd`)
+**Highlights**
+- Sauberes PID1 via `tini` (keine Zombieprozesse, saubere Signale)
+- Neustart-sicher & idempotent
+- Feste Port-Range, optionale IPv4/IPv6, Heal/Health-Checks
+- Volumentypen: `replica` oder `disperse`
 
-  ## Dockerfile Defaults
-  Setzt `PATH` auf `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`
-  und `GLUSTERD_BIN=/usr/sbin/glusterd`.
-
-  ## Schnellstart (Server)
-  ```bash
-  docker run --name glusterd --rm --network host \
--e ROLE=server -e LOG_LEVEL=DEBUG \
--e GLUSTERD_BIN=/usr/sbin/glusterd \
--v /etc/glusterfs:/etc/glusterfs \
--v /var/lib/glusterd:/var/lib/glusterd \
--v /var/log/glusterfs:/var/log/glusterfs \
--v /bricks:/bricks \
-gluster-hybrid
-  ```
-
-  ## Beispielkonfiguration
-  Siehe `config.yaml.sample` für `server+bootstrap` und `client`.
-
-
-## Troubleshooting
-
-**Symptom:** `USAGE: glusterd [options] [mountpoint]` und Hinweise auf `--volfile-server`  
-**Ursache:** Falsches Binary – das ist der *Client* (`glusterfs`), nicht der Daemon.  
-**Fix:** Stelle sicher, dass **glusterfs-server** installiert ist, und dass `GLUSTERD_BIN` auf den Daemon zeigt:
+## Schnellstart
 ```bash
-dpkg -l | egrep 'glusterfs-(server|client)'
-command -v glusterd; readlink -f $(command -v glusterd)
+docker compose -f compose.bricks.yml up -d --build
+docker exec -it gluster1 gluster peer status
+docker exec -it gluster1 gluster volume info gv0
 ```
-Starte den Container mit:
-```bash
--e GLUSTERD_BIN=/usr/sbin/glusterd     -e PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-```
+
+## Wichtige ENV-Variablen
+- `MODE` (`brick|init`) – Rolle des Containers
+- `VOLNAME` – z. B. `gv0`
+- `VTYPE` (`replica|disperse`) – Volumentyp
+- `REPLICA` – Replikafaktor (bei `replica`)
+- `DISPERSE` / `REDUNDANCY` – Parameter für `disperse`
+- `PEERS` – Kommagetrennte Hostnamen (DNS im Docker-Netz)
+- `ADDRESS_FAMILY` – `inet` (IPv4) oder `inet6`
+- `PORT_RANGE` – z. B. `49152-49251`
+- `REQUIRE_ALL_PEERS` – `1` (Default) = sichere Volume-Erstellung nur bei vollem Quorum
+- `ALLOW_FORCE_CREATE` – `0` (Default); nur bewusst aktivieren
+- `AUTO_ADD_BRICK` / `ADD_BRICK_SET` – vorsichtige Brick-Erweiterung (Hinweise im Script)
+
+## Ordner
+- `data/*` – Brick-Daten (bind-mount)
+- `state/*` – Gluster State (`/var/lib/glusterd`)
+- Platzhalter `.gitkeep` halten die Struktur im Repo.
+
+## Sicherheit & Betrieb
+- Zeit-Synchronisation auf Hosts (chrony/NTP) ist Pflicht.
+- Bei SELinux: Bind-Mounts ggf. mit `:z` labeln.
+- TLS optional via `ENABLE_SSL=1` (Zertifikate bereitstellen).
+
+## Lizenz
+MIT
