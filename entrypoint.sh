@@ -71,6 +71,7 @@
     # -------- Config --------
     MODE="${MODE:-brick}"                        # brick | init
     VOLNAME="${VOLNAME:-gv0}"
+VOLFALLBACK="${VOLFALLBACK:-gv0}"  # verwendet, wenn VOLNAME=auto & kein Volume gefunden
     VTYPE="${VTYPE:-replica}"                    # replica | disperse
     REPLICA="${REPLICA:-3}"
     DISPERSE="${DISPERSE:-6}"                    # VTYPE=disperse
@@ -87,6 +88,9 @@
     PORT_RANGE="${PORT_RANGE:-49152-49251}"
     LOG_LEVEL="${LOG_LEVEL:-WARNING}"
     ENABLE_SSL="${ENABLE_SSL:-0}"
+PEER_WAIT_SECS="${PEER_WAIT_SECS:-120}"   # -1 = unendlich warten, 0 = nicht warten, >0 = Sekunden
+PEER_WAIT_INTERVAL="${PEER_WAIT_INTERVAL:-1}"  # Sek.
+
     VOLUME_PROFILE="${VOLUME_PROFILE:-}"         # optional: vm
 
     # Print a concise env summary (no secrets)
@@ -164,95 +168,54 @@
     }
 
     require_peer_quorum(){
-      CTX="quorum"
-      [[ -z "$PEERS" ]] && { info "Kein Peer-Quorum erforderlich (PEERS leer)"; return 0; }
-      step "Auf Peer-Quorum warten"
-      to_arr "$PEERS"
-      local need
-      if [[ "$REQUIRE_ALL_PEERS" -eq 1 ]]; then
-        need=$((${#_ARR[@]} - 1)) # alle außer self
-      else
-        need=$(( REPLICA - 1 ))
-      fi
-      for i in {1..120}; do
-        local okc; okc=$(peers_connected)
-        info "Verbunden: $okc / benötigt: $need"
-        if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht"; return 0; fi
-        sleep 1
-      done
-      warn "Peer-Quorum nicht erreicht (verbunden=$(peers_connected), benötigt=$need)"
-      [[ "$MODE" == "init" ]] && { error "Abbruch im INIT-Modus, um Inkonsistenzen zu vermeiden"; return 2; }
-      return 0
-    }
+  CTX="quorum"
+  [[ -z "$PEERS" ]] && { info "Kein Peer-Quorum erforderlich (PEERS leer)"; return 0; }
+  step "Auf Peer-Quorum warten"
+  to_arr "$PEERS"
+  local need
+  if [[ "$REQUIRE_ALL_PEERS" -eq 1 ]]; then
+    need=$((${#_ARR[@]} - 1)) # alle außer self
+  else
+    need=$(( REPLICA - 1 ))
+  fi
 
-    reconcile_peers_warn(){
-      CTX="peer-drift"
-      [[ -z "$PEERS" ]] && return 0
-      step "Peer-Drift prüfen"
-      to_arr "$PEERS"; declare -A want; for p in "${_ARR[@]}"; do want[$p]=1; done
-      local pool; pool=$(gluster pool list 2>/dev/null | awk 'NR>1 {print $3}' || true)
-      local seenCount=0; for seen in $pool; do seenCount=$((seenCount+1)); [[ -n "${want[$seen]:-}" ]] || warn "Unbekannter Peer im Pool: $seen"; done
-      for p in "${_ARR[@]}"; do echo "$pool" | grep -qw "$p" || warn "Erwarteter Peer fehlt im Pool: $p"; done
-      info "Pool-Einträge: $seenCount"
-    }
+  local interval=${PEER_WAIT_INTERVAL:-1}
+  local target=${PEER_WAIT_SECS:-120}
+  local waited=0
 
-    volume_exists(){ gluster volume info "$VOLNAME" >/dev/null 2>&1; }
-    volume_started(){ gluster volume info "$VOLNAME" 2>/dev/null | awk '/Status:/ {print $2}' | grep -q '^Started$'; }
+  info "Warte-Strategie: PEER_WAIT_SECS=$target, INTERVAL=$interval, benötigt=$need"
 
-    ensure_volume_started(){
-      CTX="volume-start"
-      step "Volume-Start sicherstellen ($VOLNAME)"
-      if volume_started; then ok "Volume bereits gestartet"; return 0; fi
-      run gluster volume start "$VOLNAME"
-      ok "Volume gestartet"
-    }
-
-    local_brick_present(){
-      local self; self="$(hostname -s)"
-      gluster volume info "$VOLNAME" 2>/dev/null | grep -qE "Brick[0-9]+: $self:$BRICK_PATH"
-    }
-
-    ensure_local_brick(){
-      CTX="brick-verify"
-      step "Lokalen Brick prüfen"
-      if local_brick_present; then ok "Lokaler Brick ist Teil von $VOLNAME"; return 0; fi
-      if [[ "$AUTO_ADD_BRICK" -eq 1 && "$REPLICA" -eq 1 ]]; then
-        info "Lokaler Brick fehlt – füge hinzu (REPLICA=1)"
-        run gluster volume add-brick "$VOLNAME" "$(hostname -s):$BRICK_PATH"
-        warn "Rebalance/Heal empfohlen"
-      elif [[ -n "$ADD_BRICK_SET" ]]; then
-        to_arr "$ADD_BRICK_SET"; local n=${#_ARR[@]}
-        if (( n % REPLICA == 0 )); then
-          info "Füge kompletten Brick-Satz hinzu (${n} Hosts, replica $REPLICA)…"
-          local bricks=(); for h in "${_ARR[@]}"; do bricks+=("${h}:$BRICK_PATH"); done
-          run gluster volume add-brick "$VOLNAME" replica "$REPLICA" "${bricks[@]}"
-          warn "Rebalance/Heal empfohlen"
-        else
-          warn "ADD_BRICK_SET-Anzahl ($n) ist kein Vielfaches von REPLICA ($REPLICA) – übersprungen"
-        fi
-      else
-        warn "Lokaler Brick ist NICHT Teil des Volumes (keine Automatik ausgeführt)"
-      fi
-    }
-
-    apply_volume_basics(){
-      CTX="volume-tune"
-      step "Volume-Basics anwenden"
-      run gluster volume set "$VOLNAME" cluster.quorum-type auto || true
-      run gluster volume set "$VOLNAME" network.ping-timeout 5 || true
-      run gluster volume set "$VOLNAME" performance.client-io-threads on || true
-      run gluster volume set "$VOLNAME" diagnostics.client-log-level "$LOG_LEVEL" || true
-      run gluster volume set "$VOLNAME" diagnostics.brick-log-level "$LOG_LEVEL" || true
-      [[ -n "$PORT_RANGE" ]]      && run gluster volume set "$VOLNAME" network.port-range "$PORT_RANGE" || true
-      [[ -n "$ADDRESS_FAMILY" ]]  && run gluster volume set "$VOLNAME" transport.address-family "$ADDRESS_FAMILY" || true
-      if [[ "$ENABLE_SSL" -eq 1 ]]; then
-        warn "SSL aktiviert – stelle Zertifikate unter /etc/ssl/glusterfs bereit"
-        run gluster volume set "$VOLNAME" auth.ssl on || true
-      fi
-      ok "Volume-Basics angewandt"
-    }
-
-    maybe_profile_workload(){
+  if [[ "$target" == "-1" ]]; then
+    # Unendlich warten
+    while true; do
+      local okc; okc=$(peers_connected)
+      info "Verbunden: $okc / benötigt: $need (∞ wait)"
+      if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht"; return 0; fi
+      sleep "$interval"
+    done
+  elif [[ "$target" -eq 0 ]]; then
+    # Nicht warten
+    local okc; okc=$(peers_connected)
+    info "Verbunden: $okc / benötigt: $need (no-wait)"
+    if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht (no-wait)"; return 0; fi
+    warn "Peer-Quorum nicht erreicht (no-wait)."
+    [[ "$MODE" == "init" ]] && { error "Abbruch im INIT-Modus ohne Quorum"; return 2; }
+    return 0
+  else
+    # Zeitlich begrenztes Warten
+    while (( waited < target )); do
+      local okc; okc=$(peers_connected)
+      info "Verbunden: $okc / benötigt: $need (t+${waited}s)"
+      if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht"; return 0; fi
+      sleep "$interval"
+      waited=$((waited + interval))
+    done
+    warn "Peer-Quorum innerhalb ${target}s nicht erreicht."
+    [[ "$MODE" == "init" ]] && { error "Abbruch im INIT-Modus nach Timeout"; return 2; }
+    return 0
+  fi
+}
+maybe_profile_workload(){
       CTX="workload-profile"
       case "$VOLUME_PROFILE" in
         vm)
@@ -310,26 +273,34 @@
       brick)
         CTX="mode-brick"
         step "Modus: BRICK"
-        if volume_exists; then
+        if [[ -n "$VOLNAME" ]] && volume_exists; then
           ensure_volume_started
           apply_volume_basics
           ensure_local_brick
           post_join_health
         else
-          info "Kein Volume $VOLNAME bekannt (oder noch nicht synchronisiert)."
+          if [[ -z "$VOLNAME" ]]; then
+            info "Kein Volume sichtbar (Autodetektion) – reiner Brick-Modus."
+          else
+            info "Kein Volume $VOLNAME bekannt (oder noch nicht synchronisiert)."
+          fi
         fi
         ;;
       init)
         CTX="mode-init"
         step "Modus: INIT"
-        if volume_exists; then
+        if [[ -n "$VOLNAME" ]] && volume_exists; then
           info "Volume $VOLNAME existiert bereits."
           ensure_volume_started
           apply_volume_basics
           ensure_local_brick
           post_join_health
         else
-          create_volume_safely
+          if [[ -z "$VOLNAME" ]]; then
+            info "VOLNAME leer (Autodetektion ergab nichts) – kein Create im INIT-Modus ohne Namen."
+          else
+            create_volume_safely
+          fi
         fi
         ;;
       *)
