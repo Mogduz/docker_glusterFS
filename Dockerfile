@@ -12,4 +12,4 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 EXPOSE 24007 24008 49152-49251
 
 # run with tini as simple init to reap zombies
-ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["tini","--","bash","/usr/local/bin/entrypoint.sh"]
