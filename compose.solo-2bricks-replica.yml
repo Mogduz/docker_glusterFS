@@ -1,0 +1,35 @@
+name: gluster-solo-2bricks
+
+services:
+  gluster-solo:
+    build: .
+    container_name: gluster-solo
+    hostname: gluster-solo
+    restart: unless-stopped
+    environment:
+      - MODE=init                 # legt das Volume an (falls nicht vorhanden)
+      - VOLNAME=gv0
+      - VTYPE=replica
+      - REPLICA=2                 # Spiegelung über beide Bricks/Platten
+      - BRICK_PATHS=/bricks/brick1,/bricks/brick2
+      - PEERS=gluster-solo        # nur dieser Host
+      - REQUIRE_ALL_PEERS=1
+      - ADDRESS_FAMILY=inet
+      - PORT_RANGE=49152-49251
+      - LOG_LEVEL=INFO
+      - PEER_WAIT_SECS=0          # kein Warten nötig (Single-Host)
+      # Optional: echte Mountpoints erzwingen
+      # - REQUIRE_MOUNTED_BRICK=1
+    volumes:
+      - /mnt/disk1/gluster/brick1:/bricks/brick1
+      - /mnt/disk2/gluster/brick2:/bricks/brick2
+      - ./state:/var/lib/glusterd
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null && gluster volume info gv0 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
