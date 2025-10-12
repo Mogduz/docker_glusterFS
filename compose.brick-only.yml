@@ -9,8 +9,8 @@ services:
     restart: unless-stopped
     environment:
       - MODE=brick
-      - BRICK_PATH=/bricks/brick1
       - VOLNAME=auto
+      - BRICK_PATHS=/bricks/brick1,/bricks/brick2
       - PEERS=
       - REQUIRE_ALL_PEERS=0
       - ADDRESS_FAMILY=inet
@@ -21,6 +21,7 @@ services:
       - PEER_WAIT_INTERVAL=1
     volumes:
       - ./data/gluster1/brick1:/bricks/brick1
+      - ./data/gluster1/brick2:/bricks/brick2
       - ./state/gluster1:/var/lib/glusterd
     ulimits:
       nofile:
