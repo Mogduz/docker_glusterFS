@@ -1,4 +1,3 @@
-version: "3.9"
 # Override-Compose für ausführliches Logging im 3-Node-Cluster
 services:
   gluster1:
