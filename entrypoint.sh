@@ -1,5 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
+start_glusterd() {
+  : "${LOG_LEVEL:=INFO}"
+  ensure_glusterd_vol
+  mkdir -p /var/lib/glusterd
+  # Ensure bricks exist
+  mkdir -p "$BRICK_PATH"
+  if [[ -n "$BRICK_PATHS" ]]; then
+    IFS=',' read -r -a _ARR <<< "$BRICK_PATHS"
+    for bp in "${_ARR[@]}"; do mkdir -p "$bp"; done
+  fi
+  # Start glusterd in foreground mode (-N), backgrounded by us.
+  glusterd -N --log-level "$LOG_LEVEL" &
+  # Small wait loop for mgmt socket readiness (best-effort)
+  for i in {1..20}; do
+    gluster volume info >/dev/null 2>&1 && break
+    sleep 0.3
+  done
+}
+
 
 # ---- Config (env) ----
 MODE="${MODE:-brick}"                      # brick | init
