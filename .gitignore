@@ -1,14 +1,10 @@
 # Runtime state & data
 data/
 state/
-# Except keep the structure placeholders
 !data/**/.gitkeep
 !state/**/.gitkeep
 
-# Editor/OS
 .DS_Store
 .idea/
 .vscode/
-
-# Python bytecode if any scripts are added later
 __pycache__/
