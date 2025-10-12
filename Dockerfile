@@ -1,7 +1,9 @@
 FROM debian:12-slim
 
-RUN apt-get update      && apt-get install -y --no-install-recommends bash tini glusterfs-server glusterfs-client procps dnsutils iproute2 tini util-linux      && rm -rf /var/lib/apt/lists/*
+# gluster + useful tools
+RUN apt-get update      && apt-get install -y --no-install-recommends          bash tini glusterfs-server glusterfs-client procps dnsutils iproute2 util-linux      && rm -rf /var/lib/apt/lists/*
 
+# minimal directories expected by entrypoint
 RUN mkdir -p /var/lib/glusterd /bricks/brick1
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -9,4 +11,5 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 24007 24008 49152-49251
 
-ENTRYPOINT ["/usr/bin/tini","--","/usr/bin/env","bash","/usr/local/bin/entrypoint.sh"]
+# run with tini as simple init to reap zombies
+ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
