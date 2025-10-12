@@ -12,13 +12,13 @@ services:
       - VTYPE=replica
       - REPLICA=2                 # Spiegelung über beide Bricks/Platten
       - BRICK_PATHS=/bricks/brick1,/bricks/brick2
-      - PEERS=gluster-solo        # nur dieser Host
+      - PEERS=
       - REQUIRE_ALL_PEERS=1
       - ADDRESS_FAMILY=inet
       - PORT_RANGE=49152-49251
       - LOG_LEVEL=INFO
       - PEER_WAIT_SECS=0          # kein Warten nötig (Single-Host)
-      # Optional: echte Mountpoints erzwingen
+      - ALLOW_FORCE_CREATE=1      # Optional: echte Mountpoints erzwingen
       # - REQUIRE_MOUNTED_BRICK=1
     volumes:
       - /mnt/disk1/gluster/brick1:/bricks/brick1
