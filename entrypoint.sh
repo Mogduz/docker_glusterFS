@@ -209,11 +209,14 @@
     }
 
     reconcile_peers_warn(){
+  CTX="peer-drift"
+  [[ -z "$PEERS" ]] && return 0
+  step "Peer-Drift prüfen"
       CTX="peer-drift"
       [[ -z "$PEERS" ]] && return 0
       step "Peer-Drift prüfen"
       to_arr "$PEERS"; declare -A want; for p in "${_ARR[@]}"; do want[$p]=1; done
-      local pool; pool=$(gluster pool list 2>/dev/null | awk \'NR>1 && $1 !~ /Number/ && NF>=3 {print $3}\' || true)
+  local pool; pool=$(gluster pool list 2>/dev/null | tail -n +2 | awk '{print $3}' || true)
       local seenCount=0; for seen in $pool; do seenCount=$((seenCount+1)); [[ -n "${want[$seen]:-}" ]] || warn "Unbekannter Peer im Pool: $seen"; done
       for p in "${_ARR[@]}"; do echo "$pool" | grep -qw "$p" || warn "Erwarteter Peer fehlt im Pool: $p"; done
       info "Pool-Einträge: $seenCount"
