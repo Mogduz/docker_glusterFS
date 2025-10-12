@@ -1,0 +1,9 @@
+version: "3.9"
+# Override-Compose für ausführliches Logging im Brick-only Setup
+services:
+  gluster-brick:
+    environment:
+      - TRACE=1
+      - LOG_LEVEL=INFO
+      - PEER_WAIT_SECS=-1
+      - PEER_WAIT_INTERVAL=2
