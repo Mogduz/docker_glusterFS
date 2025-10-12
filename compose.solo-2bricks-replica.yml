@@ -4,6 +4,7 @@ services:
   gluster-solo:
     build: .
     image: gluster-solo-2bricks:latest
+    pull_policy: build
     container_name: gluster-solo
     hostname: gluster-solo
     restart: unless-stopped
