@@ -1,4 +1,3 @@
-version: "3.9"
 # Override-Compose für ausführliches Logging im Brick-only Setup
 services:
   gluster-brick:
