@@ -161,3 +161,19 @@ docker compose -f compose.solo-2bricks-replica.yml up -d
 > **Hinweis (Compose v2):** Die Top‑Level‑Angabe `version:` ist obsolet und wurde aus den Compose‑Dateien entfernt, um die Warnung von Docker Compose zu vermeiden.
 
 **Single‑Host, 2 Bricks (Replica‑2):** Siehe `compose.solo-2bricks-replica.yml` – entspricht dem Beispiel im Abschnitt *1 Server, 2 Platten*.
+
+
+### Single-Host Replica‑2 (2 Bricks auf einem Server)
+Gluster blockiert Replica‑Volumes mit **mehreren Bricks auf demselben Host**, außer man bestätigt bewusst. Unser Entrypoint setzt daher bei Bedarf **`--mode=script`** und du aktivierst den Override per ENV:
+- Setze in `compose.solo-2bricks-replica.yml`: `ALLOW_FORCE_CREATE=1`
+- Für einen Single‑Host: `PEERS=` (leer), damit keine Peer‑Probes/Pool‑Parses laufen
+
+So wird ausgeführt:
+
+```
+gluster --mode=script volume create gv0 replica 2 \
+  gluster-solo:/bricks/brick1 gluster-solo:/bricks/brick2 force
+gluster --mode=script volume start gv0
+```
+
+Nach der Initialisierung kannst du mit `compose.solo-2bricks-replica.steady.yml` im `MODE=brick` weiterfahren.
