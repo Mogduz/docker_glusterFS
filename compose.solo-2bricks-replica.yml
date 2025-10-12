@@ -18,7 +18,7 @@ services:
       - PORT_RANGE=49152-49251
       - LOG_LEVEL=INFO
       - PEER_WAIT_SECS=0          # kein Warten nötig (Single-Host)
-      - ALLOW_FORCE_CREATE=1      # Optional: echte Mountpoints erzwingen
+      - ALLOW_FORCE_CREATE=1
       # - REQUIRE_MOUNTED_BRICK=1
     volumes:
       - /mnt/disk1/gluster/brick1:/bricks/brick1
