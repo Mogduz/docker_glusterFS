@@ -18,10 +18,10 @@
     fi
 
     ts() { date -Iseconds; }
-    _log() { # level, message...
-      local lvl="$1"; shift
-      local tag="[$(ts)] [$lvl] ($CTX)"
-      case "$lvl" in
+    _log(){
+  local lvl="${1:-INFO}"; shift || true
+  local tag="[$(ts)] [$lvl] ($CTX)"
+  case "$lvl" in
         DEBUG) printf "%s %s%s%s\n" "$tag" "$C_DIM" "$*" "$C_RESET" ;;
         INFO)  printf "%s %s\n"       "$tag" "$*" ;;
         WARN)  printf "%s %s%s%s\n" "$tag" "${C_YLW}" "$*" "$C_RESET" ;;
@@ -87,26 +87,25 @@
     DRY_RUN="${DRY_RUN:-0}"                      # 1=log commands only
 
     step "Startparameter"
-    cat <<ENV | sed 's/^/  /'
-    MODE=$MODE
-    VOLNAME=$VOLNAME
-    VTYPE=$VTYPE
-    REPLICA=$REPLICA
-    DISPERSE=$DISPERSE
-    REDUNDANCY=$REDUNDANCY
-    BRICK_PATH=$BRICK_PATH
-    BRICK_PATHS=${BRICK_PATHS:-<leer>}
-    PEERS=$PEERS
-    REQUIRE_ALL_PEERS=$REQUIRE_ALL_PEERS
-    ADDRESS_FAMILY=${ADDRESS_FAMILY:-unset}
-    PORT_RANGE=$PORT_RANGE
-    LOG_LEVEL=$LOG_LEVEL
-    TRACE=$TRACE
-    PEER_WAIT_SECS=$PEER_WAIT_SECS
-    PEER_WAIT_INTERVAL=$PEER_WAIT_INTERVAL
-    DRY_RUN=$DRY_RUN
-    ENV
-
+{
+  printf '  MODE=%s\n' "$MODE"
+  printf '  VOLNAME=%s\n' "$VOLNAME"
+  printf '  VTYPE=%s\n' "$VTYPE"
+  printf '  REPLICA=%s\n' "$REPLICA"
+  printf '  DISPERSE=%s\n' "$DISPERSE"
+  printf '  REDUNDANCY=%s\n' "$REDUNDANCY"
+  printf '  BRICK_PATH=%s\n' "$BRICK_PATH"
+  printf '  BRICK_PATHS=%s\n' "${BRICK_PATHS:-<leer>}"
+  printf '  PEERS=%s\n' "$PEERS"
+  printf '  REQUIRE_ALL_PEERS=%s\n' "$REQUIRE_ALL_PEERS"
+  printf '  ADDRESS_FAMILY=%s\n' "${ADDRESS_FAMILY:-unset}"
+  printf '  PORT_RANGE=%s\n' "$PORT_RANGE"
+  printf '  LOG_LEVEL=%s\n' "$LOG_LEVEL"
+  printf '  TRACE=%s\n' "$TRACE"
+  printf '  PEER_WAIT_SECS=%s\n' "$PEER_WAIT_SECS"
+  printf '  PEER_WAIT_INTERVAL=%s\n' "$PEER_WAIT_INTERVAL"
+  printf '  DRY_RUN=%s\n' "$DRY_RUN"
+}
     # -------- Helpers --------
     to_arr(){ IFS=',' read -ra _ARR <<< "$1"; }
     run(){ info "RUN: $*"; if [[ "$DRY_RUN" -eq 1 ]]; then return 0; else "$@"; fi; }
