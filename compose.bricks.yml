@@ -10,16 +10,17 @@ services:
     environment:
       - MODE=init
       - VOLNAME=gv0
-      - VTYPE=replica      # oder disperse
+      - VTYPE=replica
       - REPLICA=3
       - BRICK_PATH=/bricks/brick1
       - PEERS=gluster1,gluster2,gluster3
       - REQUIRE_ALL_PEERS=1
       - ALLOW_FORCE_CREATE=0
-      - REQUIRE_MOUNTED_BRICK=0
       - ADDRESS_FAMILY=inet
       - PORT_RANGE=49152-49251
       - LOG_LEVEL=WARNING
+      - PEER_WAIT_SECS=120
+      - PEER_WAIT_INTERVAL=1
     volumes:
       - ./data/gluster1/brick1:/bricks/brick1
       - ./state/gluster1:/var/lib/glusterd
@@ -47,12 +48,14 @@ services:
     environment:
       - MODE=brick
       - BRICK_PATH=/bricks/brick1
+      - VOLNAME=gv0
       - PEERS=gluster1,gluster2,gluster3
       - REQUIRE_ALL_PEERS=1
-      - REQUIRE_MOUNTED_BRICK=0
       - ADDRESS_FAMILY=inet
       - PORT_RANGE=49152-49251
       - LOG_LEVEL=WARNING
+      - PEER_WAIT_SECS=120
+      - PEER_WAIT_INTERVAL=1
     volumes:
       - ./data/gluster2/brick1:/bricks/brick1
       - ./state/gluster2:/var/lib/glusterd
@@ -75,12 +78,14 @@ services:
     environment:
       - MODE=brick
       - BRICK_PATH=/bricks/brick1
+      - VOLNAME=gv0
       - PEERS=gluster1,gluster2,gluster3
       - REQUIRE_ALL_PEERS=1
-      - REQUIRE_MOUNTED_BRICK=0
       - ADDRESS_FAMILY=inet
       - PORT_RANGE=49152-49251
       - LOG_LEVEL=WARNING
+      - PEER_WAIT_SECS=120
+      - PEER_WAIT_INTERVAL=1
     volumes:
       - ./data/gluster3/brick1:/bricks/brick1
       - ./state/gluster3:/var/lib/glusterd
