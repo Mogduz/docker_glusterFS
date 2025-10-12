@@ -1,6 +1,6 @@
 \
     #!/usr/bin/env bash
-    # GlusterFS server entrypoint (verbose/communicative)
+    # GlusterFS server entrypoint (verbose + autodetect + peer-wait + multi-brick)
     set -Eeuo pipefail
 
     # -------- Logging --------
@@ -64,15 +64,15 @@
     # -------- Config --------
     MODE="${MODE:-brick}"                        # brick | init
     VOLNAME="${VOLNAME:-gv0}"
-    VOLFALLBACK="${VOLFALLBACK:-gv0}"            # nur relevant, wenn VOLNAME=auto und create gewünscht (derzeit nicht auto)
     VTYPE="${VTYPE:-replica}"                    # replica | disperse
     REPLICA="${REPLICA:-3}"
-    DISPERSE="${DISPERSE:-6}"                    # VTYPE=disperse
-    REDUNDANCY="${REDUNDANCY:-2}"                # VTYPE=disperse
+    DISPERSE="${DISPERSE:-6}"                    # VTYPE=disperse (data)
+    REDUNDANCY="${REDUNDANCY:-2}"                # VTYPE=disperse (redundancy)
     BRICK_PATH="${BRICK_PATH:-/bricks/brick1}"
+    BRICK_PATHS="${BRICK_PATHS:-}"               # comma-separated for multi-brick
     PEERS="${PEERS:-}"
-    AUTO_ADD_BRICK="${AUTO_ADD_BRICK:-0}"        # nur sicher bei REPLICA=1
-    ADD_BRICK_SET="${ADD_BRICK_SET:-}"           # kompletter Satz (Vielfaches v. REPLICA)
+    AUTO_ADD_BRICK="${AUTO_ADD_BRICK:-0}"        # safe only for REPLICA=1
+    ADD_BRICK_SET="${ADD_BRICK_SET:-}"           # comma-separated hosts; used to add full replica sets
     ALLOW_FORCE_CREATE="${ALLOW_FORCE_CREATE:-0}"
     ALLOW_EMPTY_STATE="${ALLOW_EMPTY_STATE:-0}"
     REQUIRE_ALL_PEERS="${REQUIRE_ALL_PEERS:-1}"
@@ -81,9 +81,10 @@
     PORT_RANGE="${PORT_RANGE:-49152-49251}"
     LOG_LEVEL="${LOG_LEVEL:-WARNING}"
     ENABLE_SSL="${ENABLE_SSL:-0}"
-    VOLUME_PROFILE="${VOLUME_PROFILE:-}"         # optional: vm
-    PEER_WAIT_SECS="${PEER_WAIT_SECS:-120}"      # -1 = unendlich, 0 = nicht warten, >0 Sekunden
+    VOLUME_PROFILE="${VOLUME_PROFILE:-}"         # e.g., vm
+    PEER_WAIT_SECS="${PEER_WAIT_SECS:-120}"      # -1=infinite, 0=no-wait, >0 seconds
     PEER_WAIT_INTERVAL="${PEER_WAIT_INTERVAL:-1}"
+    DRY_RUN="${DRY_RUN:-0}"                      # 1=log commands only
 
     step "Startparameter"
     cat <<ENV | sed 's/^/  /'
@@ -94,6 +95,7 @@
     DISPERSE=$DISPERSE
     REDUNDANCY=$REDUNDANCY
     BRICK_PATH=$BRICK_PATH
+    BRICK_PATHS=${BRICK_PATHS:-<leer>}
     PEERS=$PEERS
     REQUIRE_ALL_PEERS=$REQUIRE_ALL_PEERS
     ADDRESS_FAMILY=${ADDRESS_FAMILY:-unset}
@@ -102,22 +104,29 @@
     TRACE=$TRACE
     PEER_WAIT_SECS=$PEER_WAIT_SECS
     PEER_WAIT_INTERVAL=$PEER_WAIT_INTERVAL
+    DRY_RUN=$DRY_RUN
     ENV
 
     # -------- Helpers --------
     to_arr(){ IFS=',' read -ra _ARR <<< "$1"; }
-    run(){ info "RUN: $*"; "$@"; }
+    run(){ info "RUN: $*"; if [[ "$DRY_RUN" -eq 1 ]]; then return 0; else "$@"; fi; }
+    brick_paths(){
+      if [[ -n "$BRICK_PATHS" ]]; then IFS="," read -ra _BPATHS <<< "$BRICK_PATHS"; else _BPATHS=("$BRICK_PATH"); fi
+    }
     require_cmd(){ command -v "$1" >/dev/null || { error "Binary fehlt: $1"; return 127; }; }
 
     start_glusterd(){
       CTX="glusterd"
       step "glusterd starten"
       require_cmd glusterd
-      mkdir -p "$BRICK_PATH"
-      if [[ "$REQUIRE_MOUNTED_BRICK" -eq 1 ]] && ! mountpoint -q "$BRICK_PATH"; then
-        error "Brick-Pfad ist kein Mountpoint: $BRICK_PATH"; return 3
-      fi
-      touch "$BRICK_PATH/.glusterfs_brick" 2>/dev/null || { error "Brick-Pfad nicht beschreibbar: $BRICK_PATH"; return 4; }
+      brick_paths
+      for p in "${_BPATHS[@]}"; do
+        mkdir -p "$p"
+        if [[ "$REQUIRE_MOUNTED_BRICK" -eq 1 ]] && ! mountpoint -q "$p"; then
+          error "Brick-Pfad ist kein Mountpoint: $p"; return 3
+        fi
+        touch "$p/.glusterfs_brick" 2>/dev/null || { error "Brick-Pfad nicht beschreibbar: $p"; return 4; }
+      done
       run glusterd -N &
       GLUSTERD_PID=$!
       trap 'CTX="shutdown"; info "Signal empfangen → glusterd beenden"; kill -TERM ${GLUSTERD_PID}; wait ${GLUSTERD_PID}' TERM INT
@@ -223,33 +232,51 @@
       ok "Volume gestartet"
     }
 
-    local_brick_present(){
-      local self; self="$(hostname -s)"
-      gluster volume info "$VOLNAME" 2>/dev/null | grep -qE "Brick[0-9]+: $self:$BRICK_PATH"
-    }
-
-    ensure_local_brick(){
+    ensure_local_bricks(){
       CTX="brick-verify"
-      step "Lokalen Brick prüfen"
+      step "Lokale Bricks prüfen"
+      brick_paths
       if [[ -z "$VOLNAME" ]]; then info "Kein VOLNAME gesetzt → übersprungen"; return 0; fi
-      if local_brick_present; then ok "Lokaler Brick ist Teil von $VOLNAME"; return 0; fi
-      if [[ "$AUTO_ADD_BRICK" -eq 1 && "$REPLICA" -eq 1 ]]; then
-        info "Lokaler Brick fehlt – füge hinzu (REPLICA=1)"
-        run gluster volume add-brick "$VOLNAME" "$(hostname -s):$BRICK_PATH"
-        warn "Rebalance/Heal empfohlen"
-      elif [[ -n "$ADD_BRICK_SET" ]]; then
-        to_arr "$ADD_BRICK_SET"; local n=${#_ARR[@]}
-        if (( n % REPLICA == 0 )); then
-          info "Füge kompletten Brick-Satz hinzu (${n} Hosts, replica $REPLICA)…"
-          local bricks=(); for h in "${_ARR[@]}"; do bricks+=("${h}:$BRICK_PATH"); done
-          run gluster volume add-brick "$VOLNAME" replica "$REPLICA" "${bricks[@]}"
-          warn "Rebalance/Heal empfohlen"
+      local self; self="$(hostname -s)"
+      local missing=()
+      for p in "${_BPATHS[@]}"; do
+        if gluster volume info "$VOLNAME" 2>/dev/null | grep -qE "Brick[0-9]+: $self:$p"; then
+          info "Brick vorhanden: $self:$p"
         else
-          warn "ADD_BRICK_SET-Anzahl ($n) ist kein Vielfaches von REPLICA ($REPLICA) – übersprungen"
+          missing+=("$self:$p")
         fi
-      else
-        warn "Lokaler Brick ist NICHT Teil des Volumes (keine Automatik ausgeführt)"
+      done
+      if (( ${#missing[@]} == 0 )); then ok "Alle lokalen Bricks sind Teil von $VOLNAME"; return 0; fi
+
+      if [[ "$AUTO_ADD_BRICK" -eq 1 && "$REPLICA" -eq 1 ]]; then
+        for bp in "${missing[@]}"; do
+          info "Füge fehlenden Brick hinzu (REPLICA=1): $bp"
+          run gluster volume add-brick "$VOLNAME" "$bp"
+        done
+        warn "Rebalance/Heal empfohlen"
+        return 0
       fi
+
+      if [[ -n "$ADD_BRICK_SET" ]]; then
+        IFS=',' read -ra hosts <<< "$ADD_BRICK_SET"
+        local n=${#hosts[@]}
+        if (( n % REPLICA != 0 )); then
+          warn "ADD_BRICK_SET-Größe ($n) ist kein Vielfaches von REPLICA ($REPLICA) – übersprungen"
+          return 0
+        fi
+        for p in "${_BPATHS[@]}"; do
+          if printf '%s\n' "${missing[@]}" | grep -q "$self:$p"; then
+            local bricks=()
+            for h in "${hosts[@]}"; do bricks+=("${h}:$p"); done
+            info "Add-brick (replica $REPLICA) für Pfad $p über Hosts: ${hosts[*]}"
+            run gluster volume add-brick "$VOLNAME" replica "$REPLICA" "${bricks[@]}"
+            warn "Rebalance/Heal empfohlen"
+          fi
+        done
+        return 0
+      fi
+
+      warn "Nicht alle lokalen Bricks sind Teil des Volumes: ${missing[*]} (keine Automatik ausgeführt)"
     }
 
     apply_volume_basics(){
@@ -283,7 +310,6 @@
       esac
     }
 
-    # Autodetect existing volumes if VOLNAME=auto
     autodetect_volume(){
       CTX="vol-autodetect"
       if [[ "${VOLNAME}" != "auto" ]]; then
@@ -320,22 +346,39 @@
     create_volume_safely(){
       CTX="volume-create"
       step "Volume ggf. erstellen (${VOLNAME:-<leer>})"
-      to_arr "$PEERS"; local bricks=(); for p in "${_ARR[@]}"; do bricks+=("${p}:${BRICK_PATH}"); done
+      if [[ -z "$VOLNAME" ]]; then info "VOLNAME leer (Autodetektion ergab nichts) – kein Create."; return 0; fi
+      to_arr "$PEERS"; local peers=("${_ARR[@]}")
+      if (( ${#peers[@]} == 0 )); then error "Keine PEERS definiert – kein create möglich"; return 1; fi
+
+      brick_paths
+      local bricks=()
+      for p in "${_BPATHS[@]}"; do
+        for h in "${peers[@]}"; do bricks+=("${h}:${p}"); done
+      done
+      local total=${#bricks[@]}
+
       local maybe_force=(); [[ "$ALLOW_FORCE_CREATE" -eq 1 ]] && maybe_force=("force")
+
       local back=$(( RANDOM % 4 ))
       info "Backoff ${back}s vor create"
       sleep "$back"
       if volume_exists; then ok "Volume tauchte auf – create übersprungen"; return 0; fi
-      if [[ -z "$VOLNAME" ]]; then
-        info "VOLNAME leer (Autodetektion ergab nichts) – kein Create im INIT-Modus ohne Namen."
-        return 0
-      fi
+
       if [[ "$VTYPE" == "disperse" ]]; then
-        info "Create: disperse=$DISPERSE redundancy=$REDUNDANCY"
-        run gluster volume create "$VOLNAME" disperse "$DISPERSE" redundancy "$REDUNDANCY" transport tcp "${bricks[@]}" "${maybe_force[@]}"
+        local width=$(( DISPERSE + REDUNDANCY ))
+        if (( total % width != 0 )); then
+          error "Anzahl Bricks ($total) ist kein Vielfaches von (DISPERSE+REDUNDANCY)=$width"
+          return 1
+        fi
+        info "Create: disperse=$DISPERSE redundancy=$REDUNDANCY, bricks=$total"
+        run gluster volume create "$VOLNAME" transport tcp disperse "$DISPERSE" redundancy "$REDUNDANCY" "${bricks[@]}" "${maybe_force[@]}"
       else
-        info "Create: replica=$REPLICA"
-        run gluster volume create "$VOLNAME" replica "$REPLICA" transport tcp "${bricks[@]}" "${maybe_force[@]}"
+        if (( total % REPLICA != 0 )); then
+          error "Anzahl Bricks ($total) ist kein Vielfaches von REPLICA=$REPLICA"
+          return 1
+        fi
+        info "Create: replica=$REPLICA, bricks=$total"
+        run gluster volume create "$VOLNAME" transport tcp replica "$REPLICA" "${bricks[@]}" "${maybe_force[@]}"
       fi
       run gluster volume start "$VOLNAME"
       apply_volume_basics
@@ -367,7 +410,7 @@
         if volume_exists; then
           ensure_volume_started
           apply_volume_basics
-          ensure_local_brick
+          ensure_local_bricks
           post_join_health
         else
           if [[ -z "$VOLNAME" ]]; then
@@ -384,7 +427,7 @@
           info "Volume $VOLNAME existiert bereits."
           ensure_volume_started
           apply_volume_basics
-          ensure_local_brick
+          ensure_local_bricks
           post_join_health
         else
           create_volume_safely
