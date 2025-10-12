@@ -213,7 +213,7 @@
       [[ -z "$PEERS" ]] && return 0
       step "Peer-Drift prüfen"
       to_arr "$PEERS"; declare -A want; for p in "${_ARR[@]}"; do want[$p]=1; done
-      local pool; pool=$(gluster pool list 2>/dev/null | awk 'NR>1 {print $3}' || true)
+      local pool; pool=$(gluster pool list 2>/dev/null | awk \'NR>1 && $1 !~ /Number/ && NF>=3 {print $3}\' || true)
       local seenCount=0; for seen in $pool; do seenCount=$((seenCount+1)); [[ -n "${want[$seen]:-}" ]] || warn "Unbekannter Peer im Pool: $seen"; done
       for p in "${_ARR[@]}"; do echo "$pool" | grep -qw "$p" || warn "Erwarteter Peer fehlt im Pool: $p"; done
       info "Pool-Einträge: $seenCount"
@@ -227,7 +227,7 @@
       step "Volume-Start sicherstellen (${VOLNAME:-<leer>})"
       if [[ -z "$VOLNAME" ]]; then info "Kein VOLNAME gesetzt → übersprungen"; return 0; fi
       if volume_started; then ok "Volume bereits gestartet"; return 0; fi
-      run gluster volume start "$VOLNAME"
+      run gluster --mode=script volume start "$VOLNAME"
       ok "Volume gestartet"
     }
 
@@ -370,16 +370,16 @@
           return 1
         fi
         info "Create: disperse=$DISPERSE redundancy=$REDUNDANCY, bricks=$total"
-        run gluster volume create "$VOLNAME" transport tcp disperse "$DISPERSE" redundancy "$REDUNDANCY" "${bricks[@]}" "${maybe_force[@]}"
+        run gluster --mode=script volume create "$VOLNAME" transport tcp disperse "$DISPERSE" redundancy "$REDUNDANCY" "${bricks[@]}" "${maybe_force[@]}"
       else
         if (( total % REPLICA != 0 )); then
           error "Anzahl Bricks ($total) ist kein Vielfaches von REPLICA=$REPLICA"
           return 1
         fi
         info "Create: replica=$REPLICA, bricks=$total"
-        run gluster volume create "$VOLNAME" transport tcp replica "$REPLICA" "${bricks[@]}" "${maybe_force[@]}"
+        run gluster --mode=script volume create "$VOLNAME" transport tcp replica "$REPLICA" "${bricks[@]}" "${maybe_force[@]}"
       fi
-      run gluster volume start "$VOLNAME"
+      run gluster --mode=script volume start "$VOLNAME"
       apply_volume_basics
       maybe_profile_workload
       ok "Volume erstellt und gestartet"
