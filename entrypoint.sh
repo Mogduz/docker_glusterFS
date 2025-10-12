@@ -1,10 +1,6 @@
 \
     #!/usr/bin/env bash
     # GlusterFS server entrypoint (verbose/communicative)
-    # - Structured log levels (DEBUG/INFO/WARN/ERROR)
-    # - Error trap prints failing command, source line, and gluster logs
-    # - Optional shell tracing with timestamps (TRACE=1)
-    # - Clear section banners for each phase
     set -Eeuo pipefail
 
     # -------- Logging --------
@@ -42,7 +38,6 @@
     step(){  _log STEP  "===== $* ====="; }
     ok(){    _log OK    "$@"; }
 
-    # Shell tracing with timestamps/line numbers to FD 3 (stdout by default)
     if (( TRACE > 0 )); then
       exec 3>&1
       export BASH_XTRACEFD=3
@@ -51,14 +46,12 @@
       debug "Shell TRACE enabled (level=$TRACE)"
     fi
 
-    # Error trap dumps context + last gluster logs
     on_error() {
       local ec=$?
       local line="${BASH_LINENO[0]:-?}"
       local src="${BASH_SOURCE[1]:-entrypoint}"
       local cmd="${BASH_COMMAND:-?}"
       error "Fehler (rc=$ec) in ${src}:${line} → ${cmd}"
-      # Provide quick diagnostics from gluster logs if available
       if compgen -G "/var/log/glusterfs/*.log" > /dev/null; then
         echo "--- gluster logs (tail -n 100) ---"
         tail -n 100 /var/log/glusterfs/*.log | sed 's/^/gluster| /'
@@ -71,7 +64,7 @@
     # -------- Config --------
     MODE="${MODE:-brick}"                        # brick | init
     VOLNAME="${VOLNAME:-gv0}"
-VOLFALLBACK="${VOLFALLBACK:-gv0}"  # verwendet, wenn VOLNAME=auto & kein Volume gefunden
+    VOLFALLBACK="${VOLFALLBACK:-gv0}"            # nur relevant, wenn VOLNAME=auto und create gewünscht (derzeit nicht auto)
     VTYPE="${VTYPE:-replica}"                    # replica | disperse
     REPLICA="${REPLICA:-3}"
     DISPERSE="${DISPERSE:-6}"                    # VTYPE=disperse
@@ -88,12 +81,10 @@ VOLFALLBACK="${VOLFALLBACK:-gv0}"  # verwendet, wenn VOLNAME=auto & kein Volume 
     PORT_RANGE="${PORT_RANGE:-49152-49251}"
     LOG_LEVEL="${LOG_LEVEL:-WARNING}"
     ENABLE_SSL="${ENABLE_SSL:-0}"
-PEER_WAIT_SECS="${PEER_WAIT_SECS:-120}"   # -1 = unendlich warten, 0 = nicht warten, >0 = Sekunden
-PEER_WAIT_INTERVAL="${PEER_WAIT_INTERVAL:-1}"  # Sek.
-
     VOLUME_PROFILE="${VOLUME_PROFILE:-}"         # optional: vm
+    PEER_WAIT_SECS="${PEER_WAIT_SECS:-120}"      # -1 = unendlich, 0 = nicht warten, >0 Sekunden
+    PEER_WAIT_INTERVAL="${PEER_WAIT_INTERVAL:-1}"
 
-    # Print a concise env summary (no secrets)
     step "Startparameter"
     cat <<ENV | sed 's/^/  /'
     MODE=$MODE
@@ -109,6 +100,8 @@ PEER_WAIT_INTERVAL="${PEER_WAIT_INTERVAL:-1}"  # Sek.
     PORT_RANGE=$PORT_RANGE
     LOG_LEVEL=$LOG_LEVEL
     TRACE=$TRACE
+    PEER_WAIT_SECS=$PEER_WAIT_SECS
+    PEER_WAIT_INTERVAL=$PEER_WAIT_INTERVAL
     ENV
 
     # -------- Helpers --------
@@ -116,7 +109,6 @@ PEER_WAIT_INTERVAL="${PEER_WAIT_INTERVAL:-1}"  # Sek.
     run(){ info "RUN: $*"; "$@"; }
     require_cmd(){ command -v "$1" >/dev/null || { error "Binary fehlt: $1"; return 127; }; }
 
-    # -------- Phases --------
     start_glusterd(){
       CTX="glusterd"
       step "glusterd starten"
@@ -126,11 +118,9 @@ PEER_WAIT_INTERVAL="${PEER_WAIT_INTERVAL:-1}"  # Sek.
         error "Brick-Pfad ist kein Mountpoint: $BRICK_PATH"; return 3
       fi
       touch "$BRICK_PATH/.glusterfs_brick" 2>/dev/null || { error "Brick-Pfad nicht beschreibbar: $BRICK_PATH"; return 4; }
-
       run glusterd -N &
       GLUSTERD_PID=$!
       trap 'CTX="shutdown"; info "Signal empfangen → glusterd beenden"; kill -TERM ${GLUSTERD_PID}; wait ${GLUSTERD_PID}' TERM INT
-
       info "Warte auf glusterd… (PID=${GLUSTERD_PID})"
       for i in {1..30}; do
         if pgrep -x glusterd >/dev/null; then ok "glusterd läuft"; break; fi
@@ -168,54 +158,119 @@ PEER_WAIT_INTERVAL="${PEER_WAIT_INTERVAL:-1}"  # Sek.
     }
 
     require_peer_quorum(){
-  CTX="quorum"
-  [[ -z "$PEERS" ]] && { info "Kein Peer-Quorum erforderlich (PEERS leer)"; return 0; }
-  step "Auf Peer-Quorum warten"
-  to_arr "$PEERS"
-  local need
-  if [[ "$REQUIRE_ALL_PEERS" -eq 1 ]]; then
-    need=$((${#_ARR[@]} - 1)) # alle außer self
-  else
-    need=$(( REPLICA - 1 ))
-  fi
+      CTX="quorum"
+      [[ -z "$PEERS" ]] && { info "Kein Peer-Quorum erforderlich (PEERS leer)"; return 0; }
+      step "Auf Peer-Quorum warten"
+      to_arr "$PEERS"
+      local need
+      if [[ "$REQUIRE_ALL_PEERS" -eq 1 ]]; then
+        need=$((${#_ARR[@]} - 1)) # alle außer self
+      else
+        need=$(( REPLICA - 1 ))
+      fi
+      local interval=${PEER_WAIT_INTERVAL:-1}
+      local target=${PEER_WAIT_SECS:-120}
+      local waited=0
+      info "Warte-Strategie: PEER_WAIT_SECS=$target, INTERVAL=$interval, benötigt=$need"
+      if [[ "$target" == "-1" ]]; then
+        while true; do
+          local okc; okc=$(peers_connected)
+          info "Verbunden: $okc / benötigt: $need (∞ wait)"
+          if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht"; return 0; fi
+          sleep "$interval"
+        done
+      elif [[ "$target" -eq 0 ]]; then
+        local okc; okc=$(peers_connected)
+        info "Verbunden: $okc / benötigt: $need (no-wait)"
+        if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht (no-wait)"; return 0; fi
+        warn "Peer-Quorum nicht erreicht (no-wait)."
+        [[ "$MODE" == "init" ]] && { error "Abbruch im INIT-Modus ohne Quorum"; return 2; }
+        return 0
+      else
+        while (( waited < target )); do
+          local okc; okc=$(peers_connected)
+          info "Verbunden: $okc / benötigt: $need (t+${waited}s)"
+          if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht"; return 0; fi
+          sleep "$interval"
+          waited=$((waited + interval))
+        done
+        warn "Peer-Quorum innerhalb ${target}s nicht erreicht."
+        [[ "$MODE" == "init" ]] && { error "Abbruch im INIT-Modus nach Timeout"; return 2; }
+        return 0
+      fi
+    }
 
-  local interval=${PEER_WAIT_INTERVAL:-1}
-  local target=${PEER_WAIT_SECS:-120}
-  local waited=0
+    reconcile_peers_warn(){
+      CTX="peer-drift"
+      [[ -z "$PEERS" ]] && return 0
+      step "Peer-Drift prüfen"
+      to_arr "$PEERS"; declare -A want; for p in "${_ARR[@]}"; do want[$p]=1; done
+      local pool; pool=$(gluster pool list 2>/dev/null | awk 'NR>1 {print $3}' || true)
+      local seenCount=0; for seen in $pool; do seenCount=$((seenCount+1)); [[ -n "${want[$seen]:-}" ]] || warn "Unbekannter Peer im Pool: $seen"; done
+      for p in "${_ARR[@]}"; do echo "$pool" | grep -qw "$p" || warn "Erwarteter Peer fehlt im Pool: $p"; done
+      info "Pool-Einträge: $seenCount"
+    }
 
-  info "Warte-Strategie: PEER_WAIT_SECS=$target, INTERVAL=$interval, benötigt=$need"
+    volume_exists(){ [[ -n "$VOLNAME" ]] && gluster volume info "$VOLNAME" >/dev/null 2>&1; }
+    volume_started(){ gluster volume info "$VOLNAME" 2>/dev/null | awk '/Status:/ {print $2}' | grep -q '^Started$'; }
 
-  if [[ "$target" == "-1" ]]; then
-    # Unendlich warten
-    while true; do
-      local okc; okc=$(peers_connected)
-      info "Verbunden: $okc / benötigt: $need (∞ wait)"
-      if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht"; return 0; fi
-      sleep "$interval"
-    done
-  elif [[ "$target" -eq 0 ]]; then
-    # Nicht warten
-    local okc; okc=$(peers_connected)
-    info "Verbunden: $okc / benötigt: $need (no-wait)"
-    if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht (no-wait)"; return 0; fi
-    warn "Peer-Quorum nicht erreicht (no-wait)."
-    [[ "$MODE" == "init" ]] && { error "Abbruch im INIT-Modus ohne Quorum"; return 2; }
-    return 0
-  else
-    # Zeitlich begrenztes Warten
-    while (( waited < target )); do
-      local okc; okc=$(peers_connected)
-      info "Verbunden: $okc / benötigt: $need (t+${waited}s)"
-      if [[ "$okc" -ge "$need" ]]; then ok "Quorum erreicht"; return 0; fi
-      sleep "$interval"
-      waited=$((waited + interval))
-    done
-    warn "Peer-Quorum innerhalb ${target}s nicht erreicht."
-    [[ "$MODE" == "init" ]] && { error "Abbruch im INIT-Modus nach Timeout"; return 2; }
-    return 0
-  fi
-}
-maybe_profile_workload(){
+    ensure_volume_started(){
+      CTX="volume-start"
+      step "Volume-Start sicherstellen (${VOLNAME:-<leer>})"
+      if [[ -z "$VOLNAME" ]]; then info "Kein VOLNAME gesetzt → übersprungen"; return 0; fi
+      if volume_started; then ok "Volume bereits gestartet"; return 0; fi
+      run gluster volume start "$VOLNAME"
+      ok "Volume gestartet"
+    }
+
+    local_brick_present(){
+      local self; self="$(hostname -s)"
+      gluster volume info "$VOLNAME" 2>/dev/null | grep -qE "Brick[0-9]+: $self:$BRICK_PATH"
+    }
+
+    ensure_local_brick(){
+      CTX="brick-verify"
+      step "Lokalen Brick prüfen"
+      if [[ -z "$VOLNAME" ]]; then info "Kein VOLNAME gesetzt → übersprungen"; return 0; fi
+      if local_brick_present; then ok "Lokaler Brick ist Teil von $VOLNAME"; return 0; fi
+      if [[ "$AUTO_ADD_BRICK" -eq 1 && "$REPLICA" -eq 1 ]]; then
+        info "Lokaler Brick fehlt – füge hinzu (REPLICA=1)"
+        run gluster volume add-brick "$VOLNAME" "$(hostname -s):$BRICK_PATH"
+        warn "Rebalance/Heal empfohlen"
+      elif [[ -n "$ADD_BRICK_SET" ]]; then
+        to_arr "$ADD_BRICK_SET"; local n=${#_ARR[@]}
+        if (( n % REPLICA == 0 )); then
+          info "Füge kompletten Brick-Satz hinzu (${n} Hosts, replica $REPLICA)…"
+          local bricks=(); for h in "${_ARR[@]}"; do bricks+=("${h}:$BRICK_PATH"); done
+          run gluster volume add-brick "$VOLNAME" replica "$REPLICA" "${bricks[@]}"
+          warn "Rebalance/Heal empfohlen"
+        else
+          warn "ADD_BRICK_SET-Anzahl ($n) ist kein Vielfaches von REPLICA ($REPLICA) – übersprungen"
+        fi
+      else
+        warn "Lokaler Brick ist NICHT Teil des Volumes (keine Automatik ausgeführt)"
+      fi
+    }
+
+    apply_volume_basics(){
+      CTX="volume-tune"
+      step "Volume-Basics anwenden"
+      if [[ -z "$VOLNAME" ]]; then info "Kein VOLNAME gesetzt → übersprungen"; return 0; fi
+      run gluster volume set "$VOLNAME" cluster.quorum-type auto || true
+      run gluster volume set "$VOLNAME" network.ping-timeout 5 || true
+      run gluster volume set "$VOLNAME" performance.client-io-threads on || true
+      run gluster volume set "$VOLNAME" diagnostics.client-log-level "$LOG_LEVEL" || true
+      run gluster volume set "$VOLNAME" diagnostics.brick-log-level "$LOG_LEVEL" || true
+      [[ -n "$PORT_RANGE" ]]      && run gluster volume set "$VOLNAME" network.port-range "$PORT_RANGE" || true
+      [[ -n "$ADDRESS_FAMILY" ]]  && run gluster volume set "$VOLNAME" transport.address-family "$ADDRESS_FAMILY" || true
+      if [[ "$ENABLE_SSL" -eq 1 ]]; then
+        warn "SSL aktiviert – stelle Zertifikate unter /etc/ssl/glusterfs bereit"
+        run gluster volume set "$VOLNAME" auth.ssl on || true
+      fi
+      ok "Volume-Basics angewandt"
+    }
+
+    maybe_profile_workload(){
       CTX="workload-profile"
       case "$VOLUME_PROFILE" in
         vm)
@@ -228,18 +283,53 @@ maybe_profile_workload(){
       esac
     }
 
+    # Autodetect existing volumes if VOLNAME=auto
+    autodetect_volume(){
+      CTX="vol-autodetect"
+      if [[ "${VOLNAME}" != "auto" ]]; then
+        debug "VOLNAME='${VOLNAME}' → keine Autodetektion nötig"
+        return 0
+      fi
+      step "Volume-Autodetektion"
+      local vols
+      vols=$(gluster volume list 2>/dev/null | awk 'NF' || true)
+      if [[ -z "$vols" ]]; then
+        info "Keine Volumes sichtbar – bleibe im reinen Brick-Modus"
+        VOLNAME=""
+        return 0
+      fi
+      local count; count=$(echo "$vols" | wc -l | awk '{print $1}')
+      local self; self="$(hostname -s)"
+      if (( count == 1 )); then
+        VOLNAME="$(echo "$vols" | head -n1)"
+        ok "Ein vorhandenes Volume gefunden: ${VOLNAME}"
+        return 0
+      fi
+      for v in $vols; do
+        if gluster volume info "$v" 2>/dev/null | grep -qE "Brick[0-9]+: ${self}:${BRICK_PATH}"; then
+          VOLNAME="$v"
+          ok "Passendes Volume gefunden (enthält ${self}:${BRICK_PATH}): ${VOLNAME}"
+          return 0
+        fi
+      done
+      warn "Mehrere Volumes gefunden, aber keins enthält ${self}:${BRICK_PATH}. Keine Auswahl getroffen."
+      VOLNAME=""
+      return 0
+    }
+
     create_volume_safely(){
       CTX="volume-create"
-      step "Volume ggf. erstellen ($VOLNAME)"
+      step "Volume ggf. erstellen (${VOLNAME:-<leer>})"
       to_arr "$PEERS"; local bricks=(); for p in "${_ARR[@]}"; do bricks+=("${p}:${BRICK_PATH}"); done
       local maybe_force=(); [[ "$ALLOW_FORCE_CREATE" -eq 1 ]] && maybe_force=("force")
-
-      # Race-Mitigation bei Mehrfach-INIT
       local back=$(( RANDOM % 4 ))
       info "Backoff ${back}s vor create"
       sleep "$back"
       if volume_exists; then ok "Volume tauchte auf – create übersprungen"; return 0; fi
-
+      if [[ -z "$VOLNAME" ]]; then
+        info "VOLNAME leer (Autodetektion ergab nichts) – kein Create im INIT-Modus ohne Namen."
+        return 0
+      fi
       if [[ "$VTYPE" == "disperse" ]]; then
         info "Create: disperse=$DISPERSE redundancy=$REDUNDANCY"
         run gluster volume create "$VOLNAME" disperse "$DISPERSE" redundancy "$REDUNDANCY" transport tcp "${bricks[@]}" "${maybe_force[@]}"
@@ -268,12 +358,13 @@ maybe_profile_workload(){
     probe_peers
     require_peer_quorum
     reconcile_peers_warn
+    autodetect_volume
 
     case "$MODE" in
       brick)
         CTX="mode-brick"
         step "Modus: BRICK"
-        if [[ -n "$VOLNAME" ]] && volume_exists; then
+        if volume_exists; then
           ensure_volume_started
           apply_volume_basics
           ensure_local_brick
@@ -289,18 +380,14 @@ maybe_profile_workload(){
       init)
         CTX="mode-init"
         step "Modus: INIT"
-        if [[ -n "$VOLNAME" ]] && volume_exists; then
+        if volume_exists; then
           info "Volume $VOLNAME existiert bereits."
           ensure_volume_started
           apply_volume_basics
           ensure_local_brick
           post_join_health
         else
-          if [[ -z "$VOLNAME" ]]; then
-            info "VOLNAME leer (Autodetektion ergab nichts) – kein Create im INIT-Modus ohne Namen."
-          else
-            create_volume_safely
-          fi
+          create_volume_safely
         fi
         ;;
       *)
