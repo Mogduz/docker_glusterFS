@@ -8,27 +8,17 @@ services:
     hostname: gluster-brick
     restart: unless-stopped
     environment:
-      # Startet nur den Server/Brick – kein Volume-Create/-Init
       - MODE=brick
       - BRICK_PATH=/bricks/brick1
-
-      # Optional (nur für Statusprüfungen / Logs; kein Create!)
       - VOLNAME=auto
-
-      # Optional: andere Knoten anstupsen (kommagetrennt).
-      # Leer lassen für Standalone-Betrieb.
       - PEERS=
-
-      # Für reines Brick-Serving genügt meist ein lockeres Quorum
       - REQUIRE_ALL_PEERS=0
-
-      # Netzwerk-/Log-Defaults
       - ADDRESS_FAMILY=inet
       - PORT_RANGE=49152-49251
       - LOG_LEVEL=WARNING
-
-      # Debugging (0=aus, 1=Shell-Trace)
       - TRACE=0
+      - PEER_WAIT_SECS=0
+      - PEER_WAIT_INTERVAL=1
     volumes:
       - ./data/gluster1/brick1:/bricks/brick1
       - ./state/gluster1:/var/lib/glusterd
