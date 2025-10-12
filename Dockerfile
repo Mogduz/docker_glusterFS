@@ -9,5 +9,4 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 24007 24008 49152-49251
 
-# Tini als PID 1 für saubere Signal-Handhabung/Zombieschutz
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
