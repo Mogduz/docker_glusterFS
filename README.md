@@ -156,3 +156,8 @@ docker compose -f compose.solo-2bricks-replica.yml up -d
 - **Redundanz:** Replica‑2 spiegelt auf **zwei Platten desselben Hosts**. Das schützt vor Plattenausfall, aber **nicht** vor Host‑Ausfall. Für Host‑Redundanz: später erweitern (z. B. `replica 3` oder `replica 3 arbiter 1`).
 - **Validierung ohne Änderungen:** `DRY_RUN=1` zeigt alle `gluster`‑Kommandos nur im Log.
 - **Mount‑Sicherheit:** `REQUIRE_MOUNTED_BRICK=1` erzwingt echte Mountpoints für jeweils unterschiedliche Geräte/Filesysteme.
+
+
+> **Hinweis (Compose v2):** Die Top‑Level‑Angabe `version:` ist obsolet und wurde aus den Compose‑Dateien entfernt, um die Warnung von Docker Compose zu vermeiden.
+
+**Single‑Host, 2 Bricks (Replica‑2):** Siehe `compose.solo-2bricks-replica.yml` – entspricht dem Beispiel im Abschnitt *1 Server, 2 Platten*.
