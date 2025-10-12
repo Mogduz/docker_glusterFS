@@ -104,7 +104,10 @@
   printf '  TRACE=%s\n' "$TRACE"
   printf '  PEER_WAIT_SECS=%s\n' "$PEER_WAIT_SECS"
   printf '  PEER_WAIT_INTERVAL=%s\n' "$PEER_WAIT_INTERVAL"
-  printf '  DRY_RUN=%s\n' "$DRY_RUN"
+  printf '  DRY_RUN=%s
+' "$DRY_RUN"
+  printf '  ALLOW_FORCE_CREATE=%s
+' "${ALLOW_FORCE_CREATE:-0}"
 }
     # -------- Helpers --------
     to_arr(){ IFS=',' read -ra _ARR <<< "$1"; }
@@ -346,11 +349,16 @@
     }
 
     create_volume_safely(){
-      CTX="volume-create"
-      step "Volume ggf. erstellen (${VOLNAME:-<leer>})"
-      if [[ -z "$VOLNAME" ]]; then info "VOLNAME leer (Autodetektion ergab nichts) – kein Create."; return 0; fi
-      to_arr "$PEERS"; local peers=("${_ARR[@]}")
-      if (( ${#peers[@]} == 0 )); then error "Keine PEERS definiert – kein create möglich"; return 1; fi
+  CTX="volume-create"
+  step "Volume ggf. erstellen (${VOLNAME:-<leer>})"
+  if [[ -z "$VOLNAME" ]]; then info "VOLNAME leer (Autodetektion ergab nichts) – kein Create."; return 0; fi
+  to_arr "$PEERS"; local peers=("${_ARR[@]}")
+  # Single-Host-Fallback: Wenn keine PEERS gesetzt sind, setze den lokalen Host
+  if (( ${#peers[@]} == 0 )); then
+    local self; self="$(hostname -s)"
+    peers=("$self")
+    info "PEERS leer → Single-Host-Create mit Hostname: $self"
+  fi
 
       brick_paths
       local bricks=()
