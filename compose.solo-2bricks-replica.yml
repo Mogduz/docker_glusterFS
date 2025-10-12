@@ -1,35 +1,37 @@
+version: "3.9"
 name: gluster-solo-2bricks
 
 services:
   gluster-solo:
     build: .
+    image: gluster-solo-2bricks:latest
     container_name: gluster-solo
     hostname: gluster-solo
     restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
     environment:
-      - MODE=init                 # legt das Volume an (falls nicht vorhanden)
+      - MODE=init
       - VOLNAME=gv0
       - VTYPE=replica
-      - REPLICA=2                 # Spiegelung über beide Bricks/Platten
+      - REPLICA=2
       - BRICK_PATHS=/bricks/brick1,/bricks/brick2
-      - PEERS=
-      - REQUIRE_ALL_PEERS=1
-      - ADDRESS_FAMILY=inet
-      - PORT_RANGE=49152-49251
-      - LOG_LEVEL=INFO
-      - PEER_WAIT_SECS=0          # kein Warten nötig (Single-Host)
       - ALLOW_FORCE_CREATE=1
-      # - REQUIRE_MOUNTED_BRICK=1
+      - REQUIRE_ALL_PEERS=0
+      - ALLOW_EMPTY_STATE=1
+      - LOG_LEVEL=INFO
     volumes:
       - /mnt/disk1/gluster/brick1:/bricks/brick1
       - /mnt/disk2/gluster/brick2:/bricks/brick2
-      - ./state:/var/lib/glusterd
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
+      - ./state/solo:/var/lib/glusterd
+    networks: [ gluster-net ]
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null && gluster volume info gv0 >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 20
+
+networks:
+  gluster-net: {}
