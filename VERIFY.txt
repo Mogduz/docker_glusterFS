@@ -1,0 +1,17 @@
+  # Verify single vs multi brick planning (DRY_RUN=1)
+
+  # Single-brick plan (replica 3)
+  docker run --rm --name verify-single --network gluster-net \
+-e MODE=init -e VOLNAME=gv0 -e VTYPE=replica -e REPLICA=3 \
+-e PEERS=gluster1,gluster2,gluster3 -e DRY_RUN=1 \
+-v $PWD/data/gluster1/brick1:/bricks/brick1 -v $PWD/state/gluster1:/var/lib/glusterd \
+glusterfs-docker:latest
+
+  # Multi-brick plan (2 bricks per host, replica 3)
+  docker run --rm --name verify-multi --network gluster-net \
+-e MODE=init -e VOLNAME=gv0 -e VTYPE=replica -e REPLICA=3 \
+-e BRICK_PATHS=/bricks/brick1,/bricks/brick2 \
+-e PEERS=gluster1,gluster2,gluster3 -e DRY_RUN=1 \
+-v $PWD/data/gluster1/brick1:/bricks/brick1 -v $PWD/data/gluster1/brick2:/bricks/brick2 \
+-v $PWD/state/gluster1:/var/lib/glusterd \
+glusterfs-docker:latest
