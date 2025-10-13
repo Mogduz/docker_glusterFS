@@ -7,26 +7,29 @@ services:
     restart: unless-stopped
     healthcheck:
       test:
-      - CMD-SHELL
-      - pgrep -x glusterd >/dev/null && gluster volume info gv0 >/dev/null 2>&1
-      interval: 10s
-      timeout: 5s
-      retries: 20
+      - CMD
+      - bash
+      - -lc
+      - gluster volume info >/dev/null 2>&1
+      interval: ${HC_INTERVAL}
+      timeout: ${HC_TIMEOUT}
+      retries: ${HC_RETRIES}
+      start_period: ${HC_START_PERIOD}
     environment:
-    - MODE=brick
-    - VOLNAME=gv0
-    - VTYPE=replica
-    - REPLICA=2
-    - BRICK_PATHS=/bricks/brick1,/bricks/brick2
-    - PEERS=
-    - LOG_LEVEL=INFO
-    - PEER_WAIT_SECS=0
+    - MODE=${MODE}
+    - VTYPE=${VTYPE}
+    - REPLICA=${REPLICA}
+    - VOLNAME=${VOLNAME}
+    - BRICK_PATHS=${BRICK_PATHS}
+    - ALLOW_EMPTY_STATE=${ALLOW_EMPTY_STATE}
+    - ALLOW_FORCE_CREATE=${ALLOW_FORCE_CREATE}
+    - LOG_LEVEL=${LOG_LEVEL}
     extra_hosts:
     - gluster-solo:${PRIVATE_IP}
     ports:
-    - ${PRIVATE_IP}:${MGMT_PORT1}:${MGMT_PORT1}/tcp
-    - ${PRIVATE_IP}:${MGMT_PORT2}:${MGMT_PORT2}/tcp
-    - ${PRIVATE_IP}:${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp
+    - ${MGMT_PORT1}:${MGMT_PORT1}/tcp
+    - ${MGMT_PORT2}:${MGMT_PORT2}/tcp
+    - ${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp
     volumes:
     - /mnt/disk1/gluster/brick1:/bricks/brick1
     - /mnt/disk2/gluster/brick2:/bricks/brick2
