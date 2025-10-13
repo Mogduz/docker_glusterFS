@@ -3,7 +3,30 @@ name: gluster-solo-2bricks-steady
 services:
   gluster-solo:
     build: .
-    hostname: gluster-solo
+    hostname: ${HOSTNAME_GLUSTER}
+    container_name: ${CONTAINER_NAME}
+    restart: ${RESTART_POLICY:-unless-stopped}
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "gluster volume info >/dev/null 2>&1"]
+      interval: ${HC_INTERVAL}
+      timeout: ${HC_TIMEOUT}
+      retries: ${HC_RETRIES}
+      start_period: ${HC_START_PERIOD}
+    environment:
+      - MODE=${MODE}
+      - VTYPE=${VTYPE}
+      - REPLICA=${REPLICA}
+      - VOLNAME=${VOLNAME}
+      - BRICK_PATHS=${BRICK_PATHS}
+      - ALLOW_EMPTY_STATE=${ALLOW_EMPTY_STATE}
+      - ALLOW_FORCE_CREATE=${ALLOW_FORCE_CREATE}
+      - LOG_LEVEL=${LOG_LEVEL}
+    extra_hosts:
+      - "gluster-solo:${PRIVATE_IP}"
+    ports:
+      - "${PRIVATE_IP}:${MGMT_PORT1}:${MGMT_PORT1}/tcp"
+      - "${PRIVATE_IP}:${MGMT_PORT2}:${MGMT_PORT2}/tcp"
+      - "${PRIVATE_IP}:${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
     restart: unless-stopped
     environment:
       - MODE=brick
