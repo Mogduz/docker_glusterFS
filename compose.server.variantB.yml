@@ -39,15 +39,6 @@ services:
       - "${PRIVATE_IP}:${MGMT_PORT1}:${MGMT_PORT1}/tcp"
       - "${PRIVATE_IP}:${MGMT_PORT2}:${MGMT_PORT2}/tcp"
       - "${PRIVATE_IP}:${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
-    environment:
-      - MODE=init
-      - VTYPE=replica
-      - REPLICA=2
-      - VOLNAME=gv0
-      - BRICK_PATHS=/bricks/brick1,/bricks/brick2
-      - ALLOW_EMPTY_STATE=1
-      - ALLOW_FORCE_CREATE=1
-      - LOG_LEVEL=INFO
     ports:
       - "${PRIVATE_IP}:${MGMT_PORT1}:${MGMT_PORT1}/tcp"
       - "${PRIVATE_IP}:${MGMT_PORT2}:${MGMT_PORT2}/tcp"
@@ -56,12 +47,6 @@ services:
       - "${PRIVATE_IP}:49152-49251:49152-49251/tcp"
     extra_hosts:
       - "gluster-solo:${PRIVATE_IP}"
-    healthcheck:
-            test: ["CMD", "bash", "-lc", "${HC_TEST_CMD}"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 10s
     volumes:
       - gluster-data:/bricks
       - gluster-var:/var/lib/glusterd
