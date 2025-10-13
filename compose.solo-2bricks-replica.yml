@@ -28,15 +28,31 @@ services:
       - "${PRIVATE_IP}:${MGMT_PORT1}:${MGMT_PORT1}/tcp"
       - "${PRIVATE_IP}:${MGMT_PORT2}:${MGMT_PORT2}/tcp"
       - "${PRIVATE_IP}:${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
+    restart: unless-stopped
     cap_add:
       - SYS_ADMIN
     security_opt:
       - apparmor:unconfined
+    environment:
+      - MODE=init
+      - VOLNAME=gv0
+      - VTYPE=replica
+      - REPLICA=2
+      - BRICK_PATHS=/bricks/brick1,/bricks/brick2
+      - ALLOW_FORCE_CREATE=1
+      - REQUIRE_ALL_PEERS=0
+      - ALLOW_EMPTY_STATE=1
+      - LOG_LEVEL=INFO
     volumes:
       - /mnt/disk1/gluster/brick1:/bricks/brick1
       - /mnt/disk2/gluster/brick2:/bricks/brick2
       - ./state/solo:/var/lib/glusterd
     networks: [ gluster-net ]
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
 networks:
   gluster-net: {}
