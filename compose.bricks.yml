@@ -1,85 +1,96 @@
 name: gluster-lab
-
 services:
   gluster1:
     build: .
     container_name: gluster1
     hostname: gluster1
     restart: unless-stopped
-    cap_add: [ "SYS_ADMIN" ]
-    security_opt: [ "apparmor:unconfined" ]
+    cap_add:
+    - SYS_ADMIN
+    security_opt:
+    - apparmor:unconfined
     environment:
-      - MODE=init
-      - VOLNAME=gv0
-      - VTYPE=replica
-      - REPLICA=3
-      - BRICK_PATH=/bricks/brick1
-      - PEERS=gluster1,gluster2,gluster3
-      - REQUIRE_ALL_PEERS=1
-      - ALLOW_FORCE_CREATE=0
-      - ALLOW_EMPTY_STATE=1
+    - MODE=init
+    - VOLNAME=gv0
+    - VTYPE=replica
+    - REPLICA=3
+    - BRICK_PATH=/bricks/brick1
+    - PEERS=gluster1,gluster2,gluster3
+    - REQUIRE_ALL_PEERS=1
+    - ALLOW_FORCE_CREATE=0
+    - ALLOW_EMPTY_STATE=1
     volumes:
-      - ./data/gluster1/brick1:/bricks/brick1
-      - ./state/gluster1:/var/lib/glusterd
-    networks: [gluster-net]
+    - ./data/gluster1/brick1:/bricks/brick1
+    - ./state/gluster1:/var/lib/glusterd
+    networks:
+    - gluster-net
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null && gluster volume info gv0 >/dev/null 2>&1"]
+      test:
+      - CMD-SHELL
+      - pgrep -x glusterd >/dev/null && gluster volume info gv0 >/dev/null 2>&1
       interval: 10s
       timeout: 5s
       retries: 20
-
   gluster2:
     build: .
     container_name: gluster2
     hostname: gluster2
     restart: unless-stopped
-    cap_add: [ "SYS_ADMIN" ]
-    security_opt: [ "apparmor:unconfined" ]
+    cap_add:
+    - SYS_ADMIN
+    security_opt:
+    - apparmor:unconfined
     environment:
-      - MODE=brick
-      - VOLNAME=gv0
-      - VTYPE=replica
-      - REPLICA=3
-      - BRICK_PATH=/bricks/brick1
-      - PEERS=gluster1,gluster2,gluster3
-      - REQUIRE_ALL_PEERS=1
-      - ALLOW_EMPTY_STATE=1
+    - MODE=brick
+    - VOLNAME=gv0
+    - VTYPE=replica
+    - REPLICA=3
+    - BRICK_PATH=/bricks/brick1
+    - PEERS=gluster1,gluster2,gluster3
+    - REQUIRE_ALL_PEERS=1
+    - ALLOW_EMPTY_STATE=1
     volumes:
-      - ./data/gluster2/brick1:/bricks/brick1
-      - ./state/gluster2:/var/lib/glusterd
-    networks: [gluster-net]
+    - ./data/gluster2/brick1:/bricks/brick1
+    - ./state/gluster2:/var/lib/glusterd
+    networks:
+    - gluster-net
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null"]
+      test:
+      - CMD-SHELL
+      - pgrep -x glusterd >/dev/null
       interval: 10s
       timeout: 5s
       retries: 20
-
   gluster3:
     build: .
     container_name: gluster3
     hostname: gluster3
     restart: unless-stopped
-    cap_add: [ "SYS_ADMIN" ]
-    security_opt: [ "apparmor:unconfined" ]
+    cap_add:
+    - SYS_ADMIN
+    security_opt:
+    - apparmor:unconfined
     environment:
-      - MODE=brick
-      - VOLNAME=gv0
-      - VTYPE=replica
-      - REPLICA=3
-      - BRICK_PATH=/bricks/brick1
-      - PEERS=gluster1,gluster2,gluster3
-      - REQUIRE_ALL_PEERS=1
-      - ALLOW_EMPTY_STATE=1
+    - MODE=brick
+    - VOLNAME=gv0
+    - VTYPE=replica
+    - REPLICA=3
+    - BRICK_PATH=/bricks/brick1
+    - PEERS=gluster1,gluster2,gluster3
+    - REQUIRE_ALL_PEERS=1
+    - ALLOW_EMPTY_STATE=1
     volumes:
-      - ./data/gluster3/brick1:/bricks/brick1
-      - ./state/gluster3:/var/lib/glusterd
-    networks: [gluster-net]
+    - ./data/gluster3/brick1:/bricks/brick1
+    - ./state/gluster3:/var/lib/glusterd
+    networks:
+    - gluster-net
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -x glusterd >/dev/null"]
+      test:
+      - CMD-SHELL
+      - pgrep -x glusterd >/dev/null
       interval: 10s
       timeout: 5s
       retries: 20
-
 networks:
   gluster-net:
     name: gluster-net
