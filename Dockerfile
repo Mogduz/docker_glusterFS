@@ -4,10 +4,12 @@ FROM ${BASE_IMAGE}
 # gluster + useful tools
 ARG DEBIAN_FRONTEND=noninteractive
 ENV DEBIAN_FRONTEND=${DEBIAN_FRONTEND}
-ARG GLUSTER_PACKAGES
-ARG APT_EXTRAS
+ARG GLUSTER_PACKAGES="bash tini glusterfs-server glusterfs-client procps dnsutils iproute2 util-linux"
+ARG APT_EXTRAS=""
 
-RUN apt-get update      && apt-get install -y --no-install-recommends ${GLUSTER_PACKAGES} ${APT_EXTRAS} && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ${GLUSTER_PACKAGES} ${APT_EXTRAS} \
+    && rm -rf /var/lib/apt/lists/*
 
 # minimal directories expected by entrypoint
 RUN mkdir -p /var/lib/glusterd /bricks/brick1
