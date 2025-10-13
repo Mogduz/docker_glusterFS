@@ -1,5 +1,16 @@
+# -----------------------------------------------------------------------------
+# docker-compose.yml — Basiskonfiguration
+# - Lädt Variablen ausschließlich aus .env
+# - Persistiert nur den Gluster-STATE als Named Volume (glusterd)
+# - Brick-Bind-Mounts werden NICHT hier, sondern über compose.bricks.override.yml ergänzt
+#   (generiert von scripts/gen-compose-override.py auf Basis von HOST_BRICK_PATHS in .env)
+# Start:
+#   python3 scripts/gen-compose-override.py
+#   docker compose -f docker-compose.yml -f compose.bricks.override.yml up -d
+# -----------------------------------------------------------------------------
 name: gluster-solo-2bricks
 services:
+  # Dienste-Definitionen. Standard: ein Gluster-Server-Container
   gluster-solo:
     build: .
     container_name: ${CONTAINER_NAME}
@@ -12,13 +23,16 @@ services:
       retries: ${HC_RETRIES}
     ports:
       - "${MGMT_PORT1}:${MGMT_PORT1}/tcp"
-      - "${MGMT_PORT2}:${MGMT_PORT2}/tcp"
-      - "${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
+      # Zusätzlicher Management-Port
+          - "${MGMT_PORT2}:${MGMT_PORT2}/tcp"
+      # Datenportbereich für Bricks/Vol-Translatoren
+          - "${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
     cap_add:
       - SYS_ADMIN
     security_opt:
       - apparmor:unconfined
 env_file:
+          # .env liefert ALLE Variablen inkl. BRICK_PATHS
   - .envvolumes:
       - glusterd:/var/lib/glusterd
     networks:
