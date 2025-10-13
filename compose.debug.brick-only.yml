@@ -1,7 +1,0 @@
-services:
-  gluster-brick:
-    environment:
-    - TRACE=1
-    - LOG_LEVEL=INFO
-    - PEER_WAIT_SECS=-1
-    - PEER_WAIT_INTERVAL=2
