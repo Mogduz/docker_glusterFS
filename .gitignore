@@ -1,4 +1,1 @@
-/data/
-/state/
-# Generated compose override
-/compose.bricks.override.yml
+\n# Generated files\n/compose.bricks.override.yml\n/.env.override\n
