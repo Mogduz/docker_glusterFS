@@ -1,20 +1,19 @@
-# Override-Compose für ausführliches Logging im 3-Node-Cluster
 services:
   gluster1:
     environment:
-      - TRACE=1
-      - LOG_LEVEL=INFO
-      - PEER_WAIT_SECS=-1
-      - PEER_WAIT_INTERVAL=2
+    - TRACE=1
+    - LOG_LEVEL=INFO
+    - PEER_WAIT_SECS=-1
+    - PEER_WAIT_INTERVAL=2
   gluster2:
     environment:
-      - TRACE=1
-      - LOG_LEVEL=INFO
-      - PEER_WAIT_SECS=-1
-      - PEER_WAIT_INTERVAL=2
+    - TRACE=1
+    - LOG_LEVEL=INFO
+    - PEER_WAIT_SECS=-1
+    - PEER_WAIT_INTERVAL=2
   gluster3:
     environment:
-      - TRACE=1
-      - LOG_LEVEL=INFO
-      - PEER_WAIT_SECS=-1
-      - PEER_WAIT_INTERVAL=2
+    - TRACE=1
+    - LOG_LEVEL=INFO
+    - PEER_WAIT_SECS=-1
+    - PEER_WAIT_INTERVAL=2
