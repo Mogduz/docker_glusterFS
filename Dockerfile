@@ -1,7 +1,12 @@
-FROM debian:12-slim
+ARG BASE_IMAGE=debian:12-slim
+FROM ${BASE_IMAGE}
 
 # gluster + useful tools
-RUN apt-get update      && apt-get install -y --no-install-recommends          bash tini glusterfs-server glusterfs-client procps dnsutils iproute2 util-linux      && rm -rf /var/lib/apt/lists/*
+RUN ARG DEBIAN_FRONTEND=noninteractive
+ARG GLUSTER_PACKAGES
+ARG APT_EXTRAS
+
+RUN apt-get update      && apt-get install -y --no-install-recommends ${GLUSTER_PACKAGES} ${APT_EXTRAS} && rm -rf /var/lib/apt/lists/*
 
 # minimal directories expected by entrypoint
 RUN mkdir -p /var/lib/glusterd /bricks/brick1
