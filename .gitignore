@@ -1,0 +1,4 @@
+/data/
+/state/
+# Generated compose override
+/compose.bricks.override.yml
