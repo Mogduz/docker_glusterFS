@@ -1,0 +1,6 @@
+services:
+  gluster-solo:
+    volumes:
+      - ${BRICKS_HOST_ROOT:-/srv/gluster/bricks}:/bricks
+      - ${VARLIB_HOST:-/srv/gluster/varlib}:/var/lib/glusterd
+      - ${LOGS_HOST:-/srv/gluster/logs}:/var/log/glusterfs
