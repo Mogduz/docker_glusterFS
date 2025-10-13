@@ -18,3 +18,11 @@
 
 ## Project-wide validation
 - Parsed all YAML files with a duplicate-key check: **no remaining YAML syntax or duplicate-key errors** detected.
+
+
+## Dockerfile
+- Added sane defaults for build args so packages are installed even without build-arg overrides:
+  - `GLUSTER_PACKAGES="bash tini glusterfs-server glusterfs-client procps dnsutils iproute2 util-linux"`
+  - `APT_EXTRAS=""`
+- Fixed `apt-get install` line to use `--no-install-recommends` (previously garbled) and multiline continuation.
+- Ensures `tini` and `bash` are present so the ENTRYPOINT `["tini","--","bash", "..."]` works.
