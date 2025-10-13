@@ -1,0 +1,72 @@
+services:
+  gluster-solo:
+    build: .
+    image: "${IMAGE_NAME}:${IMAGE_TAG}"
+    container_name: ${CONTAINER_NAME}
+    hostname: ${HOSTNAME_GLUSTER}
+    user: "${PUID}:${PGID}"
+    cpus: "${CPUS}"
+    mem_limit: "${MEM_LIMIT}"
+    restart: ${RESTART_POLICY:-unless-stopped}
+    healthcheck:
+            test: ["CMD", "bash", "-lc", "${HC_TEST_CMD}"]
+      interval: ${HC_INTERVAL}
+      timeout: ${HC_TIMEOUT}
+      retries: ${HC_RETRIES}
+      start_period: ${HC_START_PERIOD}
+    environment:
+      - HC_TEST_CMD=${HC_TEST_CMD}
+      - CREATE_VOLUME=${CREATE_VOLUME}
+      - AUTH_ALLOW=${AUTH_ALLOW}
+      - UMASK=${UMASK}
+      - TZ=${TZ}
+      - NFS_DISABLE=${NFS_DISABLE}
+      - VOL_OPTS=${VOL_OPTS}
+      - TRANSPORT=${TRANSPORT}
+      - MAX_PORT=${MAX_PORT}
+      - ADDRESS_FAMILY=${ADDRESS_FAMILY}
+      - MODE=${MODE}
+      - VTYPE=${VTYPE}
+      - REPLICA=${REPLICA}
+      - VOLNAME=${VOLNAME}
+      - BRICK_PATHS=${BRICK_PATHS}
+      - ALLOW_EMPTY_STATE=${ALLOW_EMPTY_STATE}
+      - ALLOW_FORCE_CREATE=${ALLOW_FORCE_CREATE}
+      - LOG_LEVEL=${LOG_LEVEL}
+    extra_hosts:
+      - "gluster-solo:${PRIVATE_IP}"
+    ports:
+      - "${PRIVATE_IP}:${MGMT_PORT1}:${MGMT_PORT1}/tcp"
+      - "${PRIVATE_IP}:${MGMT_PORT2}:${MGMT_PORT2}/tcp"
+      - "${PRIVATE_IP}:${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
+    environment:
+      - MODE=init
+      - VTYPE=replica
+      - REPLICA=2
+      - VOLNAME=gv0
+      - BRICK_PATHS=/bricks/brick1,/bricks/brick2
+      - ALLOW_EMPTY_STATE=1
+      - ALLOW_FORCE_CREATE=1
+      - LOG_LEVEL=INFO
+    ports:
+      - "${PRIVATE_IP}:${MGMT_PORT1}:${MGMT_PORT1}/tcp"
+      - "${PRIVATE_IP}:${MGMT_PORT2}:${MGMT_PORT2}/tcp"
+      - "${PRIVATE_IP}:${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
+      - "${PRIVATE_IP}:24008:24008/tcp"
+      - "${PRIVATE_IP}:49152-49251:49152-49251/tcp"
+    extra_hosts:
+      - "gluster-solo:${PRIVATE_IP}"
+    healthcheck:
+            test: ["CMD", "bash", "-lc", "${HC_TEST_CMD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    volumes:
+      - gluster-data:/bricks
+      - gluster-var:/var/lib/glusterd
+      - gluster-logs:/var/log/glusterfs
+volumes:
+  gluster-data: {}
+  gluster-var: {}
+  gluster-logs: {}
