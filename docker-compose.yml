@@ -6,40 +6,24 @@ services:
     hostname: ${HOSTNAME_GLUSTER}
     restart: unless-stopped
     healthcheck:
-      test:
-      - CMD
-      - bash
-      - -lc
-      - gluster volume info >/dev/null 2>&1
+      test: ["CMD", "bash", "-lc", "gluster volume info >/dev/null 2>&1"]
       interval: ${HC_INTERVAL}
       timeout: ${HC_TIMEOUT}
       retries: ${HC_RETRIES}
-      start_period: ${HC_START_PERIOD}
-    environment:
-    - MODE=${MODE}
-    - VTYPE=${VTYPE}
-    - REPLICA=${REPLICA}
-    - VOLNAME=${VOLNAME}
-    - BRICK_PATHS=${BRICK_PATHS}
-    - ALLOW_EMPTY_STATE=${ALLOW_EMPTY_STATE}
-    - ALLOW_FORCE_CREATE=${ALLOW_FORCE_CREATE}
-    - LOG_LEVEL=${LOG_LEVEL}
-    extra_hosts:
-    - gluster-solo:${PRIVATE_IP}
     ports:
-    - ${MGMT_PORT1}:${MGMT_PORT1}/tcp
-    - ${MGMT_PORT2}:${MGMT_PORT2}/tcp
-    - ${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp
+      - "${MGMT_PORT1}:${MGMT_PORT1}/tcp"
+      - "${MGMT_PORT2}:${MGMT_PORT2}/tcp"
+      - "${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
     cap_add:
-    - SYS_ADMIN
+      - SYS_ADMIN
     security_opt:
-    - apparmor:unconfined
-    volumes:
-  glusterd:
-    - /mnt/disk1/gluster/brick1:/bricks/brick1
-    - /mnt/disk2/gluster/brick2:/bricks/brick2
-    - ./state/solo:/var/lib/glusterd
+      - apparmor:unconfined
+env_file:
+  - .envvolumes:
+      - glusterd:/var/lib/glusterd
     networks:
-    - gluster-net
+      - gluster-net
 networks:
   gluster-net: {}
+volumes:
+  glusterd: {}
