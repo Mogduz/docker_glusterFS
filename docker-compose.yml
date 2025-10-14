@@ -20,6 +20,7 @@ services:
       test: ["CMD", "bash", "-lc", "gluster volume info >/dev/null 2>&1"]
       interval: ${HC_INTERVAL}
       timeout: ${HC_TIMEOUT}
+          start_period: ${HC_START_PERIOD:-30s}
       retries: ${HC_RETRIES}
     ports:
       - "${MGMT_PORT1}:${MGMT_PORT1}/tcp"
