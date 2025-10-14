@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-gen-compose-override.py — generates compose.bricks.override.yml and updates BRICK_PATHS in .env
-- Source: HOST_BRICK_PATHS (comma-separated) from .env
-- Mapping: /bricks/brick1..N inside the container + BRICK_PATHS=/bricks/brick1,...
-- Safety: no environment merges in YAML; override adds volumes only.
-"""
-
 import os, sys, textwrap, re
 from pathlib import Path
 
@@ -15,7 +8,6 @@ ENV_OVERRIDE = None  # deprecated
 OUT_FILE = ROOT / "compose.bricks.override.yml"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
 
-# Load .env (no external libs)
 def parse_dotenv(path):
     env = {}
     if path.exists():
@@ -47,7 +39,7 @@ def detect_service_name(compose_text):
 env = dict(os.environ)
 env.update(parse_dotenv(ENV_FILE))
 
-raw = env.get("HOST_BRICK_PATHS", "").strip()  # Source paths of host bricks
+raw = env.get("HOST_BRICK_PATHS","").strip()
 if not raw:
     print("ERROR: HOST_BRICK_PATHS ist leer. Beispiel: HOST_BRICK_PATHS=/mnt/disk1/brick1,/mnt/disk2/brick2", file=sys.stderr)
     sys.exit(2)
@@ -80,7 +72,7 @@ for idx, src in enumerate(paths, start=1):
           source: {src}
           target: /bricks/brick{idx}
           bind:
-            create_host_path: true  # create missing host paths automatically (engine-dependent)
+            create_host_path: true
     """)
     vol_items.append(item)
 
