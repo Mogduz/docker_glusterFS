@@ -31,9 +31,57 @@
 
     umask "${UMASK}" || true
 
+
+ensure_mount_points_from_env() {
+  # For each HOST_BRICK{N} env var, create /bricks/brick{N} as mountpoint
+  # This does NOT create Docker mounts; it only ensures the target directories exist.
+  # Docker Compose binds the host paths to these targets via the service volumes.
+  local line name value idx
+  while IFS='=' read -r name value; do
+    [[ "$name" =~ ^HOST_BRICK([0-9]+)$ ]] || continue
+    idx="${BASH_REMATCH[1]}"
+    [[ -z "${value}" ]] && continue
+    mkdir -p "/bricks/brick${idx}"
+  done < <(env | grep -E '^HOST_BRICK[0-9]+=' | sort -V)
+}
+
+
     # Build list of brick paths from BRICK_PATHS or fallback BRICK_PATH
     brick_list() {
-      if [[ -n "${BRICK_PATHS}" ]]; then
+  # If BRICK_PATHS is provided explicitly, use it
+  if [[ -n "${BRICK_PATHS}" ]]; then
+    IFS=',' read -r -a _bps <<< "${BRICK_PATHS}"
+    printf "%s
+" "${_bps[@]}"
+    return 0
+  fi
+  # Backward-compatible fallback env
+  if [[ -n "${BRICK_PATH}" ]]; then
+    IFS=',' read -r -a _bps <<< "${BRICK_PATH}"
+    printf "%s
+" "${_bps[@]}"
+    return 0
+  fi
+  # Auto-discover: scan /bricks/brick* that exist
+  local discovered=()
+  shopt -s nullglob
+  for p in /bricks/brick*; do
+    [[ -d "$p" ]] && discovered+=("$p")
+  done
+  shopt -u nullglob
+  if (( ${#discovered[@]} == 0 )); then
+    # Final fallback: assume /bricks/brick1 exists or will be created
+    discovered=(/bricks/brick1)
+  fi
+  # Natural sort (brick1, brick2, brick10): use sort -V if available
+  if command -v sort >/dev/null 2>&1; then
+    printf "%s
+" "${discovered[@]}" | sort -V
+  else
+    printf "%s
+" "${discovered[@]}"
+  fi
+}" ]]; then
         IFS=',' read -r -a _bps <<< "${BRICK_PATHS}"
       elif [[ -n "${BRICK_PATH}" ]]; then
         IFS=',' read -r -a _bps <<< "${BRICK_PATH}"
@@ -133,6 +181,7 @@
     }
 
     # -------------------- main --------------------
+ensure_mount_points_from_env
     start_glusterd
 
     case "${MODE}" in
