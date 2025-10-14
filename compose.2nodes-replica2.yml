@@ -12,6 +12,9 @@ services:
       CREATE_VOLUME: "0"                 # multi-node: create volume manually
       BRICK_HOST: ${BRICK_HOST:?set BRICK_HOST to the node's hostname/IP}
       NFS_DISABLE: ${NFS_DISABLE:-1}
+      PRIVATE_IP: ${PRIVATE_IP:-}
+      DATA_PORT_START: ${DATA_PORT_START:-49152}
+      DATA_PORT_END: ${DATA_PORT_END:-60999}
     network_mode: host
     privileged: true
     cap_add: [ "SYS_ADMIN" ]
