@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Minimal, robust GlusterFS bootstrap for container use (no systemd).
-# Starts glusterd in foreground and, if configured, creates/starts a solo volume.
 set -Eeuo pipefail
 
 ts(){ date -u +"%Y-%m-%dT%H:%M:%SZ"; }
@@ -9,7 +7,6 @@ info(){ log INFO "$*"; }
 warn(){ log WARN "$*"; }
 err(){  log ERROR "$*"; }
 
-# --- defaults ---
 : "${VOLNAME:=gv0}"
 : "${REPLICA:=2}"
 : "${TRANSPORT:=tcp}"
@@ -18,92 +15,182 @@ err(){  log ERROR "$*"; }
 : "${VOL_OPTS:=performance.client-io-threads=on,cluster.quorum-type=auto}"
 : "${AUTH_ALLOW:=10.0.0.0/8}"
 : "${NFS_DISABLE:=1}"
-# BRICK_HOST decides what goes in 'HOST:/path' for bricks.
-# Default to 'localhost' to avoid Peer-in-Cluster hostname mismatches in single-node setups.
-: "${BRICK_HOST:=localhost}"
+: "${BRICK_HOST:=}"
+: "${BRICK_PATHS:=}"
+: "${DATA_PORT_START:=49152}"
+: "${DATA_PORT_END:=60999}"
 
-# Ensure hostname is resolvable (helps glusterd choose a stable name)
-# Add 127.0.1.1 mapping if missing
+is_loopback_host() {
+  local h="$1"
+  [[ -z "$h" ]] && return 0
+  [[ "$h" == "localhost" ]] && return 0
+  [[ "$h" == "localhost.localdomain" ]] && return 0
+  [[ "$h" == "ip6-localhost" ]] && return 0
+  if [[ "$h" =~ ^127\. ]] || [[ "$h" =~ ^0\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$h" == "::1" ]]; then
+    return 0
+  fi
+  # Try to resolve and check address class
+  if getent ahostsv4 "$h" >/dev/null 2>&1; then
+    local ip
+    ip="$(getent ahostsv4 "$h" | awk '{print $1; exit}')"
+    [[ "$ip" =~ ^127\. ]] && return 0
+    [[ "$ip" =~ ^0\. ]] && return 0
+  fi
+  return 1
+}
+
+pick_primary_ipv4() {
+  # First try: global scoped IPv4 via iproute2
+  local ip
+  ip="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
+  if [[ -n "$ip" ]]; then echo "$ip"; return 0; fi
+  # Fallback: hostname -I (filter loopback)
+  ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | head -n1 || true)"
+  if [[ -n "$ip" ]]; then echo "$ip"; return 0; fi
+  return 1
+}
+
+resolve_brick_host() {
+  # Prefer explicit BRICK_HOST if valid, else PRIVATE_IP, else auto-detect primary IPv4
+  local cand="${BRICK_HOST:-}"
+  if is_loopback_host "$cand"; then cand=""; fi
+  if [[ -z "$cand" && -n "${PRIVATE_IP:-}" ]]; then
+    cand="${PRIVATE_IP}"
+    if is_loopback_host "$cand"; then cand=""; fi
+  fi
+  if [[ -z "$cand" ]]; then
+    cand="$(pick_primary_ipv4 || true)"
+  fi
+  if [[ -z "$cand" ]]; then
+    err "Could not determine a non-loopback BRICK_HOST. Set BRICK_HOST=<this-node IPv4/FQDN> in .env."
+    return 1
+  fi
+  if is_loopback_host "$cand"; then
+    err "BRICK_HOST resolves to loopback (${cand}). Use a real interface IP or resolvable hostname."
+    return 1
+  fi
+  echo "$cand"
+}
+
+# Ensure hostname is resolvable (helps glusterd choose a stable peer name)
 if ! getent hosts "$(hostname -s)" >/dev/null 2>&1; then
   echo "127.0.1.1 $(hostname -s)" >> /etc/hosts || true
 fi
 
-# Prepare directories expected by glusterd and our bricks
-mkdir -p /var/lib/glusterd /var/log/glusterfs /bricks/brick1 /bricks/brick2
+# Ensure port range in glusterd.vol (base-port/max-port)
+conf="/etc/glusterfs/glusterd.vol"
+if [[ -f "$conf" ]]; then
+  # Replace or insert within volume management { ... }
+  if grep -q "option\s\+base-port" "$conf"; then
+    sed -ri "s/^\s*option\s+base-port\s+\S+/    option base-port ${DATA_PORT_START}/" "$conf"
+  else
+    sed -ri '/^volume management$/,/^end-volume$/ s/^end-volume$/    option base-port '"$DATA_PORT_START"'\n&/' "$conf"
+  fi
+  if grep -q "option\s\+max-port" "$conf"; then
+    sed -ri "s/^\s*option\s+max-port\s+\S+/    option max-port ${DATA_PORT_END}/" "$conf"
+  else
+    sed -ri '/^volume management$/,/^end-volume$/ s/^end-volume$/    option max-port '"$DATA_PORT_END"'\n&/' "$conf"
+  fi
+else
+  cat >"$conf" <<EOF
+volume management
+    type mgmt/glusterd
+    option working-directory /var/lib/glusterd
+    option transport.socket.listen-port 24007
+    option base-port ${DATA_PORT_START}
+    option max-port ${DATA_PORT_END}
+end-volume
+EOF
+fi
 
-# Start glusterd in the foreground (no daemon)
+mkdir -p /var/lib/glusterd /var/log/glusterfs
+
 info "starting glusterd (foreground, -N)"
 /usr/sbin/glusterd -N &
 GLUSTERD_PID=$!
 
-# Helper to wait until CLI can talk to glusterd
-wait_glusterd() {
-  local waited=0
-  local timeout="${1:-90}"
-  until gluster --mode=script volume list >/dev/null 2>&1; do
-    sleep 1; waited=$((waited+1))
-    if (( waited >= timeout )); then
-      err "glusterd did not become ready within ${timeout}s"
-      kill ${GLUSTERD_PID} || true
-      exit 1
-    fi
+wait_glusterd(){
+  local t=${1:-120}
+  for ((i=0;i<t;i++)); do
+    if gluster --mode=script volume list >/dev/null 2>&1; then return 0; fi
+    sleep 1
   done
+  err "glusterd did not become ready within ${t}s"; return 1
 }
 
-# Create a solo replica-2 volume on two bricks on the same node (force if allowed)
-maybe_create_volume() {
-  if [[ "${CREATE_VOLUME}" != "1" ]]; then
-    info "CREATE_VOLUME=0 -> skipping volume creation"
-    return 0
+# Build list of container-side brick paths
+get_bricks(){
+  if [[ -n "$BRICK_PATHS" ]]; then
+    IFS=',' read -r -a arr <<< "$BRICK_PATHS"
+    printf '%s\n' "${arr[@]}"
+    return
+  fi
+  ls -d /bricks/brick* 2>/dev/null | sort -V || true
+}
+
+maybe_create_volume(){
+  [[ "$CREATE_VOLUME" == "1" ]] || { info "CREATE_VOLUME=0 -> skip"; return 0; }
+
+  if gluster --mode=script volume info "$VOLNAME" >/dev/null 2>&1; then
+    info "volume $VOLNAME already exists"; return 0
   fi
 
-  if gluster --mode=script volume info "${VOLNAME}" >/dev/null 2>&1; then
-    info "volume ${VOLNAME} already exists"
-    return 0
+  mapfile -t bricks < <(get_bricks)
+  if [[ ${#bricks[@]} -eq 0 ]]; then
+    err "no bricks found under /bricks; set HOST_BRICK* in .env"; return 1
   fi
 
-  local bricks="${BRICK_HOST}:/bricks/brick1 ${BRICK_HOST}:/bricks/brick2"
-  local force_flag=""
-  if [[ "${ALLOW_FORCE_CREATE}" == "1" ]]; then
-    force_flag="force"
+  if [[ "$REPLICA" -ge 2 ]]; then
+    if (( ${#bricks[@]} % REPLICA != 0 )); then
+      err "brick count ${#bricks[@]} not a multiple of REPLICA=$REPLICA"; return 1
+    fi
   fi
 
-  info "creating volume ${VOLNAME} replica ${REPLICA} transport ${TRANSPORT} on ${bricks} ${force_flag}"
-  if ! gluster volume create "${VOLNAME}" replica "${REPLICA}" transport "${TRANSPORT}" ${bricks} ${force_flag}; then
-    err "failed to create volume (see /var/log/glusterfs/glusterd.log and cli.log)"
-    return 1
+  for b in "${bricks[@]}"; do mkdir -p "$b"; done
+
+  local host
+  host="$(resolve_brick_host)" || return 1
+  info "using BRICK_HOST=${host}"
+
+  specs=()
+  for b in "${bricks[@]}"; do
+    specs+=("${host}:${b}")
+  done
+
+  args=(volume create "$VOLNAME")
+  if [[ "$REPLICA" -ge 2 ]]; then args+=(replica "$REPLICA"); fi
+  args+=(transport "$TRANSPORT")
+  args+=("${specs[@]}")
+  [[ "$ALLOW_FORCE_CREATE" == "1" ]] && args+=(force)
+
+  info "creating: gluster ${args[*]}"
+  if ! gluster "${args[@]}"; then
+    err "volume create failed"; return 1
   fi
 
-  if [[ -n "${VOL_OPTS}" ]]; then
-    IFS=',' read -ra pairs <<< "${VOL_OPTS}"
-    for kv in "${pairs[@]}"; do
-      if [[ -n "${kv}" ]]; then
-        info "setting volume option ${kv}"
-        gluster volume set "${VOLNAME}" "${kv}" || true
-      fi
+  if [[ -n "$VOL_OPTS" ]]; then
+    IFS=',' read -ra kvs <<< "$VOL_OPTS"
+    for kv in "${kvs[@]}"; do
+      [[ -n "$kv" ]] || continue
+      info "set ${kv}"
+      gluster volume set "$VOLNAME" "$kv" || true
     done
   fi
 
-  if [[ -n "${AUTH_ALLOW}" ]]; then
-    info "setting auth.allow=${AUTH_ALLOW}"
-    gluster volume set "${VOLNAME}" auth.allow "${AUTH_ALLOW}" || true
+  if [[ -n "$AUTH_ALLOW" ]]; then
+    info "set auth.allow=${AUTH_ALLOW}"
+    gluster volume set "$VOLNAME" auth.allow "$AUTH_ALLOW" || true
   fi
 
-  if [[ "${NFS_DISABLE}" == "1" ]]; then
-    info "disabling legacy NFS translator"
-    gluster volume set "${VOLNAME}" nfs.disable on || true
-  fi
-
-  info "starting volume ${VOLNAME}"
-  gluster volume start "${VOLNAME}" || true
+  [[ "$NFS_DISABLE" == "1" ]] && gluster volume set "$VOLNAME" nfs.disable on || true
+  info "starting volume $VOLNAME"
+  gluster volume start "$VOLNAME" || true
 }
 
-# Background init that waits for glusterd and (maybe) creates volume
 (
-  wait_glusterd 120 || exit 1
+  wait_glusterd || exit 1
   maybe_create_volume || true
 ) &
 
-# Keep container running as long as glusterd runs
 trap 'kill ${GLUSTERD_PID} 2>/dev/null || true' EXIT
 wait ${GLUSTERD_PID}
