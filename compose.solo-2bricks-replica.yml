@@ -1,66 +1,39 @@
-version: "3.9"
-
 services:
   gluster-solo:
-    container_name: ${CONTAINER_NAME}
+    container_name: ${CONTAINER_NAME:-gluster-solo}
     build:
       context: .
       dockerfile: Dockerfile
-    hostname: ${HOSTNAME_GLUSTER}
+    hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
     environment:
-      TZ: ${TZ}
-      UMASK: ${UMASK}
-      LOG_LEVEL: ${LOG_LEVEL}
-      # server mode
-      MODE: ${MODE}
-      VOLNAME: ${VOLNAME}
-      VTYPE: ${VTYPE}
-      REPLICA: ${REPLICA}
-      TRANSPORT: ${TRANSPORT}
-      CREATE_VOLUME: ${CREATE_VOLUME}
-      ALLOW_FORCE_CREATE: ${ALLOW_FORCE_CREATE}
-      VOL_OPTS: ${VOL_OPTS}
-      AUTH_ALLOW: ${AUTH_ALLOW}
-      NFS_DISABLE: ${NFS_DISABLE}
-      # networking caps
-      ADDRESS_FAMILY: ${ADDRESS_FAMILY}
-      MAX_PORT: ${MAX_PORT}
+      TZ: ${TZ:-UTC}
+      UMASK: ${UMASK:-0022}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      VOLNAME: ${VOLNAME:-gv0}
+      REPLICA: ${REPLICA:-2}
+      TRANSPORT: ${TRANSPORT:-tcp}
+      CREATE_VOLUME: ${CREATE_VOLUME:-1}
+      ALLOW_FORCE_CREATE: ${ALLOW_FORCE_CREATE:-1}
+      VOL_OPTS: ${VOL_OPTS:-performance.client-io-threads=on,cluster.quorum-type=auto}
+      AUTH_ALLOW: ${AUTH_ALLOW:-10.0.0.0/8}
+      NFS_DISABLE: ${NFS_DISABLE:-1}
+    network_mode: host
+    privileged: true
     cap_add:
       - SYS_ADMIN
-      - SYS_RESOURCE
     security_opt:
       - apparmor:unconfined
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
+    devices:
+      - /dev/fuse:/dev/fuse
     volumes:
-      - ${HOST_BRICK1}:/bricks/brick1:rw
-      - ${HOST_BRICK2}:/bricks/brick2:rw
-      - gluster-var:/var/lib/glusterd
-      - gluster-logs:/var/log/glusterfs
-    ports:
-      - "${MGMT_PORT1}:${MGMT_PORT1}/tcp"
-      - "${MGMT_PORT2}:${MGMT_PORT2}/tcp"
-      - "${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
+      - ./data/glusterd:/var/lib/glusterd
+      - ./data/logs:/var/log/glusterfs
+      - ./bricks/brick1:/bricks/brick1
+      - ./bricks/brick2:/bricks/brick2
     healthcheck:
-      test: ["CMD", "/usr/local/bin/entrypoint.sh", "--healthcheck"]
-      interval: ${HC_INTERVAL}
-      timeout: ${HC_TIMEOUT}
-      start_period: ${HC_START_PERIOD}
-      retries: ${HC_RETRIES}
-    networks:
-      - gluster-net
+      test: ["CMD-SHELL", "gluster --mode=script volume list >/dev/null 2>&1"]
+      interval: ${HC_INTERVAL:-10s}
+      timeout: ${HC_TIMEOUT:-5s}
+      retries: ${HC_RETRIES:-20}
+      start_period: ${HC_START_PERIOD:-30s}
     restart: unless-stopped
-
-volumes:
-  gluster-var: {}
-  gluster-logs: {}
-
-networks:
-  gluster-net:
-    driver: bridge
-    # Optional: define a custom subnet; avoid clashing with your 10.1.0.0/16
-    # ipam:
-    #   config:
-    #     - subnet: 172.30.0.0/16
