@@ -26,7 +26,8 @@ services:
     devices:
       - /dev/fuse:/dev/fuse
     volumes:
-      - ${HOST_BRICK1:?set HOST_BRICK1 in .env}:/bricks/brick1:rw
-      - ${HOST_BRICK2:?set HOST_BRICK2 in .env}:/bricks/brick2:rw
       - ./data/glusterd:/var/lib/glusterd
       - ./data/logs:/var/log/glusterfs
+      DATA_PORT_START: ${DATA_PORT_START:-49152}
+      DATA_PORT_END: ${DATA_PORT_END:-60999}
+      PRIVATE_IP: ${PRIVATE_IP:-}
