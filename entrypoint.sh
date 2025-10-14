@@ -4,7 +4,8 @@
 
 # ---- Strict mode + error trap ----
 set -Eeuo pipefail
-trap 'rc=$?; echo "$(date -u +%FT%TZ) [ERROR] Exit $rc at ${BASH_SOURCE[0]}:${LINENO} :: ${BASH_COMMAND}"; exit $rc' ERR
+# Log-only ERR trap: do not exit on benign non-zero statuses (e.g., tests, grep no-match)
+trap 'rc=$?; [[ $rc -eq 0 ]] && exit 0; echo "$(date -u +%FT%TZ) [ERROR] rc=$rc at ${BASH_SOURCE[0]}:${LINENO} :: ${BASH_COMMAND}" >&2' ERR
 
 # Optional debug tracing
 : "${DEBUG:=0}"
@@ -36,9 +37,6 @@ banner(){ printf "\n%s [PHASE] %s\n\n" "$(ts)" "$*"; }
 : "${LOG_LEVEL:=INFO}"
 : "${UMASK:=0022}"
 # Legacy/optional inputs (not required in env-only mode)
-: "${BRICK_PATHS:=}"
-: "${BRICK_PATH:=}"
-
 umask "${UMASK}" || true
 
 # ---- Verbose config overview ----
@@ -50,11 +48,14 @@ print_overview() {
   echo "  ADDRESS_FAMILY=${ADDRESS_FAMILY}, MAX_PORT=${MAX_PORT}"
   echo "  UMASK=${UMASK}, TZ=${TZ}, LOG_LEVEL=${LOG_LEVEL}"
   # Show HOST_BRICK* discovered from environment
+  {
   echo -n "  HOST_BRICK*: "
-  env | grep -E '^HOST_BRICK[0-9]+=' | sort -V | sed 's/^/    /' || echo "    <none>"
-  # Show BRICK_PATHS/BRICK_PATH if provided (legacy)
-  [[ -n "${BRICK_PATHS}" ]] && echo "  BRICK_PATHS=${BRICK_PATHS}"
-  [[ -n "${BRICK_PATH}"  ]] && echo "  BRICK_PATH=${BRICK_PATH}"
+  hb="$(env | awk -F= '/^HOST_BRICK[0-9]+=/{print "    " $0}' | sort -V 2>/dev/null || true)"
+  if [[ -n "$hb" ]]; then printf "
+%s
+" "$hb"; else echo "    <none>"; fi
+}
+  # Show BRICK_PATHS/BRICK_PATH if provided (legacy)  [[ -n "${BRICK_PATH}"  ]] && echo "  BRICK_PATH=${BRICK_PATH}"
 }
 
 # ---- Create /bricks/brickN for each HOST_BRICKN ----
@@ -77,13 +78,26 @@ ensure_mount_points_from_env() {
 
 # ---- Determine brick list ----
 brick_list() {
-  if [[ -n "${BRICK_PATHS}" ]]; then
-    IFS=',' read -r -a _bps <<< "${BRICK_PATHS}"
+  # Autodiscover /bricks/brick* (natural sort)
+  shopt -s nullglob
+  local arr=(/bricks/brick*)
+  shopt -u nullglob
+  if (( ${#arr[@]} == 0 )); then
+    arr=(/bricks/brick1)
+  fi
+  if command -v sort >/dev/null 2>&1; then
+    printf "%s
+" "${arr[@]}" | sort -V
+  else
+    printf "%s
+" "${arr[@]}"
+  fi
+}
+"
     printf "%s\n" "${_bps[@]}"
     return 0
   fi
-  if [[ -n "${BRICK_PATH}" ]]; then
-    IFS=',' read -r -a _bps <<< "${BRICK_PATH}"
+  if    IFS=',' read -r -a _bps <<< "${BRICK_PATH}"
     printf "%s\n" "${_bps[@]}"
     return 0
   fi
