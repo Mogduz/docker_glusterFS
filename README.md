@@ -1,7 +1,7 @@
 # GlusterFS in Docker — ENV‑driven, single‑image setup
 
 This repository provides a **single GlusterFS server image** that can run a local, lab, or single‑host multi‑brick setup. 
-The stack is **ENV‑driven**: all configuration lives in `.env`. Brick bind mounts are generated from `HOST_BRICK_PATHS` via a small helper script.
+The stack is **ENV‑driven**: all configuration lives in `.env`. Brick bind mounts are generated from `HOST_HOST_BRICK* (autodiscovered inside the container)` via a small helper script.
 
 **No Makefile.** You operate the stack directly with Docker Compose.
 
@@ -12,8 +12,8 @@ The stack is **ENV‑driven**: all configuration lives in `.env`. Brick bind mou
   - loads variables from **`.env` only** (see `env_file` section),
   - persists Gluster state at `/var/lib/glusterd` via the named volume **`glusterd`**,
   - leaves brick bind mounts to the generated override.
-- **`scripts/gen-compose-override.py`** — Reads `HOST_BRICK_PATHS` from `.env`, generates **`—`** with bind mounts, and writes **`BRICK_PATHS`** back into `.env` (container targets `/bricks/brick1..N`).
-- **`entrypoint.sh`** — Starts `glusterd`, waits for readiness, prepares bricks from `BRICK_PATHS`, optionally creates the volume idempotently and applies volume options.
+- **`scripts/gen-compose-override.py`** — Reads `HOST_HOST_BRICK* (autodiscovered inside the container)` from `.env`, generates **`—`** with bind mounts, and writes **`HOST_BRICK* (autodiscovered inside the container)`** back into `.env` (container targets `/bricks/brick1..N`).
+- **`entrypoint.sh`** — Starts `glusterd`, waits for readiness, prepares bricks from `HOST_BRICK* (autodiscovered inside the container)`, optionally creates the volume idempotently and applies volume options.
 
 ---
 ## Prerequisites
@@ -28,12 +28,12 @@ The stack is **ENV‑driven**: all configuration lives in `.env`. Brick bind mou
    cp .env.example .env
    # Edit and set comma‑separated host paths (absolute paths recommended)
    # Example:
-   # HOST_BRICK_PATHS=/mnt/disk1/gluster/brick1,/mnt/disk2/gluster/brick2
+   # HOST_HOST_BRICK* (autodiscovered inside the container)=/mnt/disk1/gluster/brick1,/mnt/disk2/gluster/brick2
    ```
-2) Generate the brick override and let it populate `BRICK_PATHS`:
+2) Generate the brick override and let it populate `HOST_BRICK* (autodiscovered inside the container)`:
    ```bash
       # Creates —
-   # Writes BRICK_PATHS=/bricks/brick1,/bricks/brick2 into .env
+   # Writes HOST_BRICK* (autodiscovered inside the container)=/bricks/brick1,/bricks/brick2 into .env
    ```
 3) Bring the stack up:
    ```bash
@@ -53,12 +53,12 @@ The stack is **ENV‑driven**: all configuration lives in `.env`. Brick bind mou
 - **Compose / runtime**
   - `CONTAINER_NAME, DATA_PORT_END, DATA_PORT_START, HC_INTERVAL, HC_RETRIES, HC_TIMEOUT, HOSTNAME_GLUSTER, MGMT_PORT1, MGMT_PORT2
 - **Entrypoint / Gluster behavior (excerpt)**
-  - `ADDRESS_FAMILY, ALLOW_EMPTY_STATE, ALLOW_FORCE_CREATE, AUTH_ALLOW, BRICK_PATH, BRICK_PATHS, CREATE_VOLUME, HOSTNAME, LOG_LEVEL, MAX_PORT, MODE, NFS_DISABLE, PEERS, REPLICA, REQUIRE_ALL_PEERS, TRANSPORT, TZ, UMASK, VOLNAME, VOL_OPTS, VTYPE, bp, force, host
+  - `ADDRESS_FAMILY, ALLOW_EMPTY_STATE, ALLOW_FORCE_CREATE, AUTH_ALLOW, BRICK_PATH, HOST_BRICK* (autodiscovered inside the container), CREATE_VOLUME, HOSTNAME, LOG_LEVEL, MAX_PORT, MODE, NFS_DISABLE, PEERS, REPLICA, REQUIRE_ALL_PEERS, TRANSPORT, TZ, UMASK, VOLNAME, VOL_OPTS, VTYPE, bp, force, host
 - **Generator**
-  - `HOST_BRICK_PATHS` (comma‑separated host directories for bricks) → required
-  - `BRICK_PATHS` (container targets) → **auto‑written** by the generator
+  - `HOST_HOST_BRICK* (autodiscovered inside the container)` (comma‑separated host directories for bricks) → required
+  - `HOST_BRICK* (autodiscovered inside the container)` (container targets) → **auto‑written** by the generator
 
-> Tip: `HOST_BRICK_PATHS` determines how many bricks you run. The generator maps them to `/bricks/brick1..N` automatically and writes that list into `BRICK_PATHS` for the entrypoint.
+> Tip: `HOST_HOST_BRICK* (autodiscovered inside the container)` determines how many bricks you run. The generator maps them to `/bricks/brick1..N` automatically and writes that list into `HOST_BRICK* (autodiscovered inside the container)` for the entrypoint.
 
 **Ports**
 - Management: `${MGMT_PORT1}` (default 24007), `${MGMT_PORT2}` (24008)
@@ -89,7 +89,7 @@ services:
         bind:
           create_host_path: true
 ```
-The container then receives `BRICK_PATHS=/bricks/brick1,/bricks/brick2` in `.env` (written by the generator).
+The container then receives `HOST_BRICK* (autodiscovered inside the container)=/bricks/brick1,/bricks/brick2` in `.env` (written by the generator).
 
 ---
 ## Security & performance notes
@@ -103,7 +103,7 @@ The container then receives `BRICK_PATHS=/bricks/brick1,/bricks/brick2` in `.env
 ## Troubleshooting
 - **“Operation not permitted” / xattrs** — verify your host filesystem supports xattrs and that security policies allow them. The container adds `SYS_ADMIN` and relaxes AppArmor to help.
 - **Ports not reachable** — confirm that `${MGMT_PORT1}`, `${MGMT_PORT2}`, and the data range are exposed and permitted by your firewall.
-- **Volume not created** — ensure `CREATE_VOLUME=1`, `ALLOW_FORCE_CREATE=1` (for replica‑2 prompts), and that `BRICK_PATHS` lists all container brick targets.
+- **Volume not created** — ensure `CREATE_VOLUME=1`, `ALLOW_FORCE_CREATE=1` (for replica‑2 prompts), and that `HOST_BRICK* (autodiscovered inside the container)` lists all container brick targets.
 - **Peer clustering** — this setup targets single‑host/multi‑brick labs. If you need multi‑host clusters, add peer probing and a leader node orchestration step (not covered here).
 
 ---
