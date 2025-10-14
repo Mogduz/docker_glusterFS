@@ -1,5 +1,16 @@
+# -----------------------------------------------------------------------------
+# docker-compose.yml — base configuration
+# - Loads variables exclusively from .env
+# - Persists only /var/lib/glusterd as named volume (glusterd)
+# - Brick bind mounts are added via —
+#   (generated from HOST_BRICK_PATHS by scripts/gen-compose-override.py)
+# Start:
+#   python3 scripts/gen-compose-override.py
+#   docker compose -f docker-compose.yml -f — up -d
+# -----------------------------------------------------------------------------
 name: gluster-solo-2bricks
 services:
+  # Service definitions. Standard: ein Gluster-Server-Container
   gluster-solo:
     build: .
     container_name: ${CONTAINER_NAME}
@@ -9,21 +20,39 @@ services:
       test: ["CMD", "bash", "-lc", "gluster volume info >/dev/null 2>&1"]
       interval: ${HC_INTERVAL}
       timeout: ${HC_TIMEOUT}
+          start_period: ${HC_START_PERIOD:-30s}
       retries: ${HC_RETRIES}
     ports:
       - "${MGMT_PORT1}:${MGMT_PORT1}/tcp"
-      - "${MGMT_PORT2}:${MGMT_PORT2}/tcp"
-      - "${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
+      # Zusätzlicher Management-Port
+          - "${MGMT_PORT2}:${MGMT_PORT2}/tcp"
+      # Datenportbereich für Bricks/Vol-Translatoren
+          - "${DATA_PORT_START}-${DATA_PORT_END}:${DATA_PORT_START}-${DATA_PORT_END}/tcp"
     cap_add:
       - SYS_ADMIN
     security_opt:
       - apparmor:unconfined
 env_file:
+          # .env supplies ALL variables incl. BRICK_PATHS
   - .envvolumes:
       - glusterd:/var/lib/glusterd
+          - brick1:/bricks/brick1
+          - brick2:/bricks/brick2
     networks:
       - gluster-net
 networks:
   gluster-net: {}
 volumes:
   glusterd: {}
+  brick1:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_BRICK1}
+  brick2:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_BRICK2}
