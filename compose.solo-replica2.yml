@@ -18,6 +18,9 @@ services:
       AUTH_ALLOW: ${AUTH_ALLOW:-10.0.0.0/8}
       NFS_DISABLE: ${NFS_DISABLE:-1}
       BRICK_HOST: ${BRICK_HOST:-localhost}
+      PRIVATE_IP: ${PRIVATE_IP:-}
+      DATA_PORT_START: ${DATA_PORT_START:-49152}
+      DATA_PORT_END: ${DATA_PORT_END:-60999}
     network_mode: host
     privileged: true
     cap_add:
