@@ -38,7 +38,7 @@ print_overview() {
   echo "  ADDRESS_FAMILY=${ADDRESS_FAMILY}, MAX_PORT=${MAX_PORT}"
   echo "  UMASK=${UMASK}, TZ=${TZ}, LOG_LEVEL=${LOG_LEVEL}"
   echo -n "  HOST_BRICK*: "
-  HB="$(env | awk -F= '/^HOST_BRICK[0-9]+=/{print \"    \" $0}' | sort -V 2>/dev/null || true)"
+  HB="$(env | grep -E '^HOST_BRICK[0-9]+=' | sort -V | sed 's/^/    /')"
   if [[ -n "$HB" ]]; then printf "\n%s\n" "$HB"; else echo "    <none>"; fi
 }
 
