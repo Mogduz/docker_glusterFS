@@ -12,7 +12,7 @@ The stack is **ENV‑driven**: all configuration lives in `.env`. Brick bind mou
   - loads variables from **`.env` only** (see `env_file` section),
   - persists Gluster state at `/var/lib/glusterd` via the named volume **`glusterd`**,
   - leaves brick bind mounts to the generated override.
-- **`scripts/gen-compose-override.py`** — Reads `HOST_BRICK_PATHS` from `.env`, generates **`compose.bricks.override.yml`** with bind mounts, and writes **`BRICK_PATHS`** back into `.env` (container targets `/bricks/brick1..N`).
+- **`scripts/gen-compose-override.py`** — Reads `HOST_BRICK_PATHS` from `.env`, generates **`—`** with bind mounts, and writes **`BRICK_PATHS`** back into `.env` (container targets `/bricks/brick1..N`).
 - **`entrypoint.sh`** — Starts `glusterd`, waits for readiness, prepares bricks from `BRICK_PATHS`, optionally creates the volume idempotently and applies volume options.
 
 ---
@@ -32,17 +32,16 @@ The stack is **ENV‑driven**: all configuration lives in `.env`. Brick bind mou
    ```
 2) Generate the brick override and let it populate `BRICK_PATHS`:
    ```bash
-   python3 scripts/gen-compose-override.py
-   # Creates compose.bricks.override.yml
+      # Creates —
    # Writes BRICK_PATHS=/bricks/brick1,/bricks/brick2 into .env
    ```
 3) Bring the stack up:
    ```bash
-   docker compose -f docker-compose.yml -f compose.bricks.override.yml up -d
+   docker compose up -d
    ```
 4) Verify:
    ```bash
-   docker compose -f docker-compose.yml -f compose.bricks.override.yml ps
+   docker compose ps
    docker exec -it gluster-solo gluster volume info
    ```
 
@@ -111,9 +110,20 @@ The container then receives `BRICK_PATHS=/bricks/brick1,/bricks/brick2` in `.env
 ## Housekeeping
 - The repository keeps only the **base compose** and the **state named volume**. Brick directories are **not** committed.
 - Generated files:
-  - `compose.bricks.override.yml` (bind mounts) — ignored by Git
+  - `—` (bind mounts) — ignored by Git
   - `.env` (your live configuration) — never commit secrets
 
 ---
 ## License
 See the repository’s license file if present.
+
+
+---
+## Brick mapping (env‑only, no override)
+This stack uses two standard bricks bound from host paths via the local volume driver.
+Configure them in `.env`:
+```env
+HOST_BRICK1=/mnt/brick1
+HOST_BRICK2=/mnt/brick2
+```
+The service mounts them as `/bricks/brick1` and `/bricks/brick2`. If you change `REPLICA`, ensure the brick count matches.
