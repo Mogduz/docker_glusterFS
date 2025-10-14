@@ -26,14 +26,7 @@ services:
     devices:
       - /dev/fuse:/dev/fuse
     volumes:
+      - ${HOST_BRICK1:?set HOST_BRICK1 in .env}:/bricks/brick1:rw
+      - ${HOST_BRICK2:?set HOST_BRICK2 in .env}:/bricks/brick2:rw
       - ./data/glusterd:/var/lib/glusterd
       - ./data/logs:/var/log/glusterfs
-      - ./bricks/brick1:/bricks/brick1
-      - ./bricks/brick2:/bricks/brick2
-    healthcheck:
-      test: ["CMD-SHELL", "gluster --mode=script volume list >/dev/null 2>&1"]
-      interval: ${HC_INTERVAL:-10s}
-      timeout: ${HC_TIMEOUT:-5s}
-      retries: ${HC_RETRIES:-20}
-      start_period: ${HC_START_PERIOD:-30s}
-    restart: unless-stopped
