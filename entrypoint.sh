@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 ## -----------------------------------------------------------------------------
-## entrypoint.sh — Startlogik für GlusterFS im Container
-## Zweck:
-##   - glusterd  # Management Daemon starten  # Gluster Management Daemon starten starten und auf Bereitschaft prüfen
-##   - idempotente Volume-Erstellung (wenn MODE=init und CREATE_VOLUME=1)
-##   - Brick-Verzeichnisse vorbereiten (BRICK_PATHS) und Volume-Optionen setzen
-## Wichtige ENV-Variablen (aus .env):
-##   VOLNAME, VTYPE, REPLICA, CREATE_VOLUME, ALLOW_FORCE_CREATE, BRICK_PATHS,
-##   AUTH_ALLOW, VOL_OPTS, NFS_DISABLE, ADDRESS_FAMILY, MAX_PORT, TZ, LOG_LEVEL
-## Hinweis: Nur Kommentare hinzugefügt — keine Verhaltensänderungen.
+## entrypoint.sh — startup logic for GlusterFS inside the container
+## Purpose:
+##   - start glusterd and wait until ready
+##   - idempotent volume creation (when MODE=init & CREATE_VOLUME=1)
+##   - prepare brick directories (BRICK_PATHS) and apply volume options
+## Environment (from .env): VOLNAME, VTYPE, REPLICA, CREATE_VOLUME, ALLOW_FORCE_CREATE,
+##   BRICK_PATHS, AUTH_ALLOW, VOL_OPTS, NFS_DISABLE, ADDRESS_FAMILY, MAX_PORT, TZ, LOG_LEVEL
+## Note: Comments only — no behavior changes.
 ## -----------------------------------------------------------------------------
-#!/usr/bin/env bash
 \
 #!/usr/bin/env bash
 set -euo pipefail
@@ -74,7 +72,7 @@ start_glusterd(){
   sleep 0.5
   kill -0 "$pid" 2>/dev/null || { err "glusterd start fehlgeschlagen"; exit 1; }
   for i in {1..60}; do
-    gluster volume info  # Healthcheck  # Healthcheck: Volumes abfragen >/dev/null 2>&1 && return 0
+    gluster volume info  # health check  # health check: Volumes abfragen >/dev/null 2>&1 && return 0
     sleep 0.5
   done
   err "glusterd startete nicht rechtzeitig."; exit 1
@@ -121,7 +119,7 @@ create_volume_solo(){
   local force=""; [[ "$ALLOW_FORCE_CREATE" == "1" ]] && force="force"
   case "$VTYPE" in
     replica) info "Erzeuge Volume: volume create ${VOLNAME} replica ${REPLICA} transport ${TRANSPORT} ${spec[*]} ${force}"
-             gluster volume create  # nur falls nicht vorhanden  # Idempotent: nur wenn nicht vorhanden "$VOLNAME" replica "$REPLICA" transport ${TRANSPORT} "${spec[@]}" ${force:+force} >/dev/null ;;
+             gluster volume create  # only if not existing  # Idempotent: nur wenn nicht vorhanden "$VOLNAME" replica "$REPLICA" transport ${TRANSPORT} "${spec[@]}" ${force:+force} >/dev/null ;;
     *) err "VTYPE=${VTYPE} im Solo-Setup nicht unterstützt"; exit 1;;
   esac
   gluster volume start "$VOLNAME" >/dev/null
