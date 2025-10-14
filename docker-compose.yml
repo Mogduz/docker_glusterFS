@@ -44,3 +44,15 @@ networks:
   gluster-net: {}
 volumes:
   glusterd: {}
+  brick1:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_BRICK1}
+  brick2:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_BRICK2}
