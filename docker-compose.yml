@@ -2,11 +2,11 @@
 # docker-compose.yml — base configuration
 # - Loads variables exclusively from .env
 # - Persists only /var/lib/glusterd as named volume (glusterd)
-# - Brick bind mounts are added via compose.bricks.override.yml
+# - Brick bind mounts are added via —
 #   (generated from HOST_BRICK_PATHS by scripts/gen-compose-override.py)
 # Start:
 #   python3 scripts/gen-compose-override.py
-#   docker compose -f docker-compose.yml -f compose.bricks.override.yml up -d
+#   docker compose -f docker-compose.yml -f — up -d
 # -----------------------------------------------------------------------------
 name: gluster-solo-2bricks
 services:
@@ -36,6 +36,8 @@ env_file:
           # .env supplies ALL variables incl. BRICK_PATHS
   - .envvolumes:
       - glusterd:/var/lib/glusterd
+          - brick1:/bricks/brick1
+          - brick2:/bricks/brick2
     networks:
       - gluster-net
 networks:
