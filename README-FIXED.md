@@ -58,3 +58,39 @@ volumes:
 ```
 
 Fehlt eine Variable, bricht `docker compose` mit einer klaren Meldung ab (kein heimliches Anlegen von Default-Pfaden).
+
+
+## Dynamische Brick-Zahl
+Setze in `.env` beliebig viele Host-Pfade – entweder nummeriert **HOST_BRICK1..N** oder als Liste **HOST_BRICK_PATHS**:
+
+```env
+HOST_BRICK1=/mnt/disk1/brick1
+HOST_BRICK2=/mnt/disk2/brick2
+HOST_BRICK3=/mnt/disk3/brick3
+# ...
+# alternativ:
+# HOST_BRICK_PATHS=/mnt/disk1/brick1,/mnt/disk2/brick2,/mnt/disk3/brick3
+```
+
+Generiere dann das Override (wird automatisch von Compose geladen):
+```bash
+python3 scripts/gen-compose-override.py
+docker compose up -d
+```
+
+Der Entrypoint liest `BRICK_PATHS` (Container-Pfade) und erstellt das Volume dynamisch. Bei `REPLICA=2` muss die Brick-Anzahl ein **Vielfaches von 2** sein (distributed-replicated).
+
+
+### Wichtig: `localhost` wird von Gluster für Bricks abgelehnt
+Gluster verweigert `localhost`/Loopback-Adressen beim `volume create` für Bricks. Verwende eine **nicht-loopback** IPv4/FQDN deines Hosts (`BRICK_HOST`), oder setze `PRIVATE_IP`. Der Entrypoint ermittelt sonst automatisch die erste globale IPv4. Siehe auch Gluster CLI-Parser, der `localhost/127.0.0.1` explizit ablehnt, und Mailinglisten-Beiträge mit identischer Fehlermeldung.
+
+### Brick-Ports / Range
+Wir setzen standardmäßig `base-port=${DATA_PORT_START:-49152}` und `max-port=${DATA_PORT_END:-60999}` in `/etc/glusterfs/glusterd.vol`. Öffne in Firewalls die **24007/24008** sowie **je Brick einen Port** in dieser Range. Logs zeigen beim Start die übernommene `max-port`-Einstellung.
+
+
+### `BRICK_HOST` vs. `PRIVATE_IP`
+Der Container bekommt jetzt `PRIVATE_IP` aus `.env` explizit injiziert. Die Host-Ermittlung im Entrypoint läuft so:
+1. Wenn `BRICK_HOST` gesetzt **und** nicht-Loopback → verwenden.
+2. Sonst, wenn `PRIVATE_IP` gesetzt **und** nicht-Loopback → verwenden.
+3. Sonst automatische Erkennung der ersten globalen IPv4.
+
