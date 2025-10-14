@@ -1,124 +1,119 @@
-# GlusterFS in Docker – robustes, neustart‑sicheres Setup
+# GlusterFS in Docker — ENV‑driven, single‑image setup
 
-Dieses Repo liefert ein **einheitliches Image** mit zwei Modi:
-- `MODE=init`: Cluster/Volume anlegen (idempotent; kein Re‑Create wenn vorhanden)
-- `MODE=brick`: Brick‑Knoten beitreten, Volume starten, NICHT neu anlegen
+This repository provides a **single GlusterFS server image** that can run a local, lab, or single‑host multi‑brick setup. 
+The stack is **ENV‑driven**: all configuration lives in `.env`. Brick bind mounts are generated from `HOST_BRICK_PATHS` via a small helper script.
 
-Die Skripte sind *nicht interaktiv* (`--mode=script`) und unterstützen Single‑Host‑Setups
-mit mehreren Bricks **(mit `force`, wenn gewünscht)** sowie Multi‑Host‑Cluster.
+**No Makefile.** You operate the stack directly with Docker Compose.
 
 ---
-
-## tl;dr – Build
-```bash
-docker compose -f compose.solo-2bricks-replica.yml up -d --build
-```
-
----
-
-## Wichtige Anforderungen
-Gluster benötigt **trusted‑XATTRs** auf den Brick‑Pfaden. In Containern erlauben wir das via:
-- `cap_add: [SYS_ADMIN]`
-- `security_opt: ["apparmor:unconfined"]`
-- Ext4/XFS mit `user_xattr` (bei ext4 Standard)
-
-Auf besonders restriktiven Hosts ggf. `privileged: true` nutzen (nur im Lab).
+## What’s included
+- **`Dockerfile`** — Debian slim + `glusterfs-server`/`glusterfs-client` + `tini`.      Entrypoint is `entrypoint.sh` inside the container.
+- **`docker-compose.yml`** — Base compose that:
+  - loads variables from **`.env` only** (see `env_file` section),
+  - persists Gluster state at `/var/lib/glusterd` via the named volume **`glusterd`**,
+  - leaves brick bind mounts to the generated override.
+- **`scripts/gen-compose-override.py`** — Reads `HOST_BRICK_PATHS` from `.env`, generates **`compose.bricks.override.yml`** with bind mounts, and writes **`BRICK_PATHS`** back into `.env` (container targets `/bricks/brick1..N`).
+- **`entrypoint.sh`** — Starts `glusterd`, waits for readiness, prepares bricks from `BRICK_PATHS`, optionally creates the volume idempotently and applies volume options.
 
 ---
+## Prerequisites
+- Linux host with Docker Engine and Docker Compose plugin.
+- Filesystem supporting **extended attributes (xattrs)** for brick paths (e.g., ext4 or xfs).
+- Consider enabling AppArmor/SELinux allowances when bind mounting host paths (see Troubleshooting).
 
-## Beispiele
+---
+## Quickstart (ENV‑only, no Makefile)
+1) Create your `.env` from the template and set host brick paths:
+   ```bash
+   cp .env.example .env
+   # Edit and set comma‑separated host paths (absolute paths recommended)
+   # Example:
+   # HOST_BRICK_PATHS=/mnt/disk1/gluster/brick1,/mnt/disk2/gluster/brick2
+   ```
+2) Generate the brick override and let it populate `BRICK_PATHS`:
+   ```bash
+   python3 scripts/gen-compose-override.py
+   # Creates compose.bricks.override.yml
+   # Writes BRICK_PATHS=/bricks/brick1,/bricks/brick2 into .env
+   ```
+3) Bring the stack up:
+   ```bash
+   docker compose -f docker-compose.yml -f compose.bricks.override.yml up -d
+   ```
+4) Verify:
+   ```bash
+   docker compose -f docker-compose.yml -f compose.bricks.override.yml ps
+   docker exec -it gluster-solo gluster volume info
+   ```
 
-### 1) Single‑Host mit **2 Bricks** (Replica‑2, *ein* Host, *zwei* Platten)
-Datei: `compose.solo-2bricks-replica.yml`
+---
+## Configuration
 
+**Main ENV file:** `.env` (copied from `.env.example`). The compose file references variables via `$Ellipsis`. Key variables detected in this repo include:
+
+- **Compose / runtime**
+  - `CONTAINER_NAME, DATA_PORT_END, DATA_PORT_START, HC_INTERVAL, HC_RETRIES, HC_TIMEOUT, HOSTNAME_GLUSTER, MGMT_PORT1, MGMT_PORT2
+- **Entrypoint / Gluster behavior (excerpt)**
+  - `ADDRESS_FAMILY, ALLOW_EMPTY_STATE, ALLOW_FORCE_CREATE, AUTH_ALLOW, BRICK_PATH, BRICK_PATHS, CREATE_VOLUME, HOSTNAME, LOG_LEVEL, MAX_PORT, MODE, NFS_DISABLE, PEERS, REPLICA, REQUIRE_ALL_PEERS, TRANSPORT, TZ, UMASK, VOLNAME, VOL_OPTS, VTYPE, bp, force, host
+- **Generator**
+  - `HOST_BRICK_PATHS` (comma‑separated host directories for bricks) → required
+  - `BRICK_PATHS` (container targets) → **auto‑written** by the generator
+
+> Tip: `HOST_BRICK_PATHS` determines how many bricks you run. The generator maps them to `/bricks/brick1..N` automatically and writes that list into `BRICK_PATHS` for the entrypoint.
+
+**Ports**
+- Management: `${MGMT_PORT1}` (default 24007), `${MGMT_PORT2}` (24008)
+- Data range: `${DATA_PORT_START}`‑`${DATA_PORT_END}` (default 49152‑49251)
+
+**Volume creation**
+- The entrypoint can create a volume idempotently based on the supplied variables (e.g., `VOLNAME`, `VTYPE`, `REPLICA`, `CREATE_VOLUME`, `ALLOW_FORCE_CREATE`).      If a volume already exists, it will be started and configured.
+
+**Access control**
+- `AUTH_ALLOW` is applied to the Gluster volume (comma‑separated CIDRs or hosts).      Keep Docker‑exposed ports restricted at the host firewall level as well.
+
+---
+## Generated override
+
+The override is intentionally small and only contains **bind mounts** like:
 ```yaml
 services:
   gluster-solo:
-    build: .
-    image: gluster-solo-2bricks:latest
-    container_name: gluster-solo
-    hostname: gluster-solo
-    restart: unless-stopped
-    cap_add: [ "SYS_ADMIN" ]
-    security_opt: [ "apparmor:unconfined" ]
-    environment:
-      - MODE=init
-      - VOLNAME=gv0
-      - VTYPE=replica
-      - REPLICA=2
-      - BRICK_PATHS=/bricks/brick1,/bricks/brick2
-      - ALLOW_FORCE_CREATE=1     # notwendig, weil beide Bricks auf demselben Host liegen
-      - REQUIRE_ALL_PEERS=0
-      - ALLOW_EMPTY_STATE=1
     volumes:
-      # Je Brick eine eigene physische Platte/Partition – ext4 mit XATTR
-      - /mnt/disk1/gluster/brick1:/bricks/brick1
-      - /mnt/disk2/gluster/brick2:/bricks/brick2
-      - ./state/solo:/var/lib/glusterd
-    ports:
-      - "24007:24007"
-      - "24008:24008"
-    # Gluster-Datenports (49152-49251) nur bei Bedarf publishen
-    networks: [ gluster-net ]
-networks:
-  gluster-net: {}
+      - type: bind
+        source: /mnt/disk1/gluster/brick1
+        target: /bricks/brick1
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /mnt/disk2/gluster/brick2
+        target: /bricks/brick2
+        bind:
+          create_host_path: true
 ```
-
-Start:
-```bash
-docker compose -f compose.solo-2bricks-replica.yml up -d --build
-docker exec -it gluster-solo gluster volume info gv0
-```
-
-> Hinweis: Replica‑2 ist **Split‑Brain‑anfällig**. Für produktiv: Replica‑3 oder Arbiter.
+The container then receives `BRICK_PATHS=/bricks/brick1,/bricks/brick2` in `.env` (written by the generator).
 
 ---
-
-### 2) Multi‑Host (3 Replika, 3 Container auf einem Host – Lab)
-Datei: `compose.bricks.yml` – drei Container (`gluster1..3`) mit je einem Brick.
-`gluster1` übernimmt `MODE=init` und legt `gv0` einmalig an.
-
-```bash
-docker compose -f compose.bricks.yml up -d --build
-```
-
-Prüfung:
-```bash
-docker exec -it gluster1 gluster peer status
-docker exec -it gluster1 gluster volume info gv0
-```
+## Security & performance notes
+- **auth.allow**: always restrict to client networks (`AUTH_ALLOW`).      Combine with host firewall rules restricting Gluster ports to trusted ranges.
+- **File descriptors**: consider increasing `nofile` ulimit if you expect many connections.
+- **SELinux**: when bind mounting on SELinux systems, use `:z` or `:Z` or set appropriate labels.
+- **AppArmor**: the compose config uses `apparmor:unconfined` to avoid xattr issues in some setups.
+- **Docker Desktop**: running Gluster inside Docker Desktop (macOS/Windows) is not supported — xattrs and FUSE semantics are unreliable there.
 
 ---
-
-### 3) Single‑Brick (einfachstes Setup)
-Datei: `compose.single-brick.yml`
-
-```bash
-docker compose -f compose.single-brick.yml up -d --build
-```
+## Troubleshooting
+- **“Operation not permitted” / xattrs** — verify your host filesystem supports xattrs and that security policies allow them. The container adds `SYS_ADMIN` and relaxes AppArmor to help.
+- **Ports not reachable** — confirm that `${MGMT_PORT1}`, `${MGMT_PORT2}`, and the data range are exposed and permitted by your firewall.
+- **Volume not created** — ensure `CREATE_VOLUME=1`, `ALLOW_FORCE_CREATE=1` (for replica‑2 prompts), and that `BRICK_PATHS` lists all container brick targets.
+- **Peer clustering** — this setup targets single‑host/multi‑brick labs. If you need multi‑host clusters, add peer probing and a leader node orchestration step (not covered here).
 
 ---
-
-## Umgebungsvariablen (Auszug)
-- `MODE` (`brick|init`) – Startmodus
-- `VOLNAME` – z. B. `gv0`
-- `VTYPE` – derzeit `replica`
-- `REPLICA` – Replikafaktor
-- `BRICK_PATH` – Pfad für den lokalen Brick
-- `BRICK_PATHS` – Kommagetrennte Liste für mehrere Bricks **auf demselben Host**
-- `PEERS` – Kommagetrennte Hostnamen (1 Brick je Host)
-- `ALLOW_FORCE_CREATE` – `1` erlaubt `force` bei `volume create` (z. B. Multi‑Brick auf einem Host)
-- `REQUIRE_ALL_PEERS` – `1` = create nur bei allen Peers online
-- `ALLOW_EMPTY_STATE` – `1` = Hinweis bei leerem `/var/lib/glusterd` unterdrücken
+## Housekeeping
+- The repository keeps only the **base compose** and the **state named volume**. Brick directories are **not** committed.
+- Generated files:
+  - `compose.bricks.override.yml` (bind mounts) — ignored by Git
+  - `.env` (your live configuration) — never commit secrets
 
 ---
-
-## Häufige Stolpersteine
-- **Operation not permitted** beim Anlegen: fehlt oft `CAP_SYS_ADMIN` bzw. AppArmor blockt XATTR → siehe Compose‑Beispiele.
-- **Replica‑2** fordert interaktiv Bestätigung → wir erzwingen Script‑Modus und steuern `force` via `ALLOW_FORCE_CREATE`.
-- **Reboots**: State nach außen mounten (`/var/lib/glusterd`) – sonst vergisst glusterd sein Cluster.
-
----
-
-## Lizenz
-MIT
+## License
+See the repository’s license file if present.
