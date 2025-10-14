@@ -29,7 +29,6 @@ is_loopback_host() {
   if [[ "$h" =~ ^127\. ]] || [[ "$h" =~ ^0\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$h" == "::1" ]]; then
     return 0
   fi
-  # Try to resolve and check address class
   if getent ahostsv4 "$h" >/dev/null 2>&1; then
     local ip
     ip="$(getent ahostsv4 "$h" | awk '{print $1; exit}')"
@@ -40,18 +39,15 @@ is_loopback_host() {
 }
 
 pick_primary_ipv4() {
-  # First try: global scoped IPv4 via iproute2
   local ip
   ip="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
   if [[ -n "$ip" ]]; then echo "$ip"; return 0; fi
-  # Fallback: hostname -I (filter loopback)
   ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | head -n1 || true)"
   if [[ -n "$ip" ]]; then echo "$ip"; return 0; fi
   return 1
 }
 
 resolve_brick_host() {
-  # Prefer explicit BRICK_HOST if valid, else PRIVATE_IP, else auto-detect primary IPv4
   local cand="${BRICK_HOST:-}"
   if is_loopback_host "$cand"; then cand=""; fi
   if [[ -z "$cand" && -n "${PRIVATE_IP:-}" ]]; then
@@ -72,15 +68,12 @@ resolve_brick_host() {
   echo "$cand"
 }
 
-# Ensure hostname is resolvable (helps glusterd choose a stable peer name)
 if ! getent hosts "$(hostname -s)" >/dev/null 2>&1; then
   echo "127.0.1.1 $(hostname -s)" >> /etc/hosts || true
 fi
 
-# Ensure port range in glusterd.vol (base-port/max-port)
 conf="/etc/glusterfs/glusterd.vol"
 if [[ -f "$conf" ]]; then
-  # Replace or insert within volume management { ... }
   if grep -q "option\s\+base-port" "$conf"; then
     sed -ri "s/^\s*option\s+base-port\s+\S+/    option base-port ${DATA_PORT_START}/" "$conf"
   else
@@ -118,7 +111,6 @@ wait_glusterd(){
   err "glusterd did not become ready within ${t}s"; return 1
 }
 
-# Build list of container-side brick paths
 get_bricks(){
   if [[ -n "$BRICK_PATHS" ]]; then
     IFS=',' read -r -a arr <<< "$BRICK_PATHS"
