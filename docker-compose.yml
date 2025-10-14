@@ -1,16 +1,16 @@
 # -----------------------------------------------------------------------------
-# docker-compose.yml — Basiskonfiguration
-# - Lädt Variablen ausschließlich aus .env
-# - Persistiert nur den Gluster-STATE als Named Volume (glusterd)
-# - Brick-Bind-Mounts werden NICHT hier, sondern über compose.bricks.override.yml ergänzt
-#   (generiert von scripts/gen-compose-override.py auf Basis von HOST_BRICK_PATHS in .env)
+# docker-compose.yml — base configuration
+# - Loads variables exclusively from .env
+# - Persists only /var/lib/glusterd as named volume (glusterd)
+# - Brick bind mounts are added via compose.bricks.override.yml
+#   (generated from HOST_BRICK_PATHS by scripts/gen-compose-override.py)
 # Start:
 #   python3 scripts/gen-compose-override.py
 #   docker compose -f docker-compose.yml -f compose.bricks.override.yml up -d
 # -----------------------------------------------------------------------------
 name: gluster-solo-2bricks
 services:
-  # Dienste-Definitionen. Standard: ein Gluster-Server-Container
+  # Service definitions. Standard: ein Gluster-Server-Container
   gluster-solo:
     build: .
     container_name: ${CONTAINER_NAME}
@@ -32,7 +32,7 @@ services:
     security_opt:
       - apparmor:unconfined
 env_file:
-          # .env liefert ALLE Variablen inkl. BRICK_PATHS
+          # .env supplies ALL variables incl. BRICK_PATHS
   - .envvolumes:
       - glusterd:/var/lib/glusterd
     networks:
