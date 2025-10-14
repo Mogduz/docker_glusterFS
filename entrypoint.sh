@@ -18,6 +18,15 @@ err(){  log ERROR "$*"; }
 : "${VOL_OPTS:=performance.client-io-threads=on,cluster.quorum-type=auto}"
 : "${AUTH_ALLOW:=10.0.0.0/8}"
 : "${NFS_DISABLE:=1}"
+# BRICK_HOST decides what goes in 'HOST:/path' for bricks.
+# Default to 'localhost' to avoid Peer-in-Cluster hostname mismatches in single-node setups.
+: "${BRICK_HOST:=localhost}"
+
+# Ensure hostname is resolvable (helps glusterd choose a stable name)
+# Add 127.0.1.1 mapping if missing
+if ! getent hosts "$(hostname -s)" >/dev/null 2>&1; then
+  echo "127.0.1.1 $(hostname -s)" >> /etc/hosts || true
+fi
 
 # Prepare directories expected by glusterd and our bricks
 mkdir -p /var/lib/glusterd /var/log/glusterfs /bricks/brick1 /bricks/brick2
@@ -30,7 +39,7 @@ GLUSTERD_PID=$!
 # Helper to wait until CLI can talk to glusterd
 wait_glusterd() {
   local waited=0
-  local timeout="${1:-60}"
+  local timeout="${1:-90}"
   until gluster --mode=script volume list >/dev/null 2>&1; do
     sleep 1; waited=$((waited+1))
     if (( waited >= timeout )); then
@@ -41,7 +50,7 @@ wait_glusterd() {
   done
 }
 
-# Create a solo replica-2 volume on two bricks in the same node (force if allowed)
+# Create a solo replica-2 volume on two bricks on the same node (force if allowed)
 maybe_create_volume() {
   if [[ "${CREATE_VOLUME}" != "1" ]]; then
     info "CREATE_VOLUME=0 -> skipping volume creation"
@@ -53,9 +62,7 @@ maybe_create_volume() {
     return 0
   fi
 
-  local host
-  host="$(hostname -s)"
-  local bricks="${host}:/bricks/brick1 ${host}:/bricks/brick2"
+  local bricks="${BRICK_HOST}:/bricks/brick1 ${BRICK_HOST}:/bricks/brick2"
   local force_flag=""
   if [[ "${ALLOW_FORCE_CREATE}" == "1" ]]; then
     force_flag="force"
@@ -63,7 +70,8 @@ maybe_create_volume() {
 
   info "creating volume ${VOLNAME} replica ${REPLICA} transport ${TRANSPORT} on ${bricks} ${force_flag}"
   if ! gluster volume create "${VOLNAME}" replica "${REPLICA}" transport "${TRANSPORT}" ${bricks} ${force_flag}; then
-    err "failed to create volume"; return 1
+    err "failed to create volume (see /var/log/glusterfs/glusterd.log and cli.log)"
+    return 1
   fi
 
   if [[ -n "${VOL_OPTS}" ]]; then
@@ -92,11 +100,10 @@ maybe_create_volume() {
 
 # Background init that waits for glusterd and (maybe) creates volume
 (
-  wait_glusterd 90 || exit 1
+  wait_glusterd 120 || exit 1
   maybe_create_volume || true
 ) &
 
-# Tail logs if present to keep side output visible
-# Then wait on glusterd PID to keep container alive
+# Keep container running as long as glusterd runs
 trap 'kill ${GLUSTERD_PID} 2>/dev/null || true' EXIT
 wait ${GLUSTERD_PID}
