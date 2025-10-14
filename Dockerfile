@@ -1,8 +1,8 @@
 # -----------------------------------------------------------------------------
 # Dockerfile — GlusterFS Server/Client Container
-# Basis: Debian slim + glusterfs-server + tini.
-# Zweck: ein Image für Solo- oder Lab-Cluster, Entry über /usr/local/bin/entrypoint.sh.
-# Hinweis: Der Code wird NICHT verändert; nur erklärende Kommentare.
+# Base: Debian slim + glusterfs-server + tini.
+# Purpose: Single image for solo or lab clusters; entry via entrypoint.sh.
+# Note: Added comments only; functionality unchanged.
 # -----------------------------------------------------------------------------
 ARG BASE_IMAGE=debian:12-slim
 FROM ${BASE_IMAGE}
