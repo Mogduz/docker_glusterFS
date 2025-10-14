@@ -1,0 +1,33 @@
+services:
+  glusterA:
+    container_name: ${CONTAINER_NAME:-gluster}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: ${HOSTNAME_GLUSTER:-gluster}
+    environment:
+      TZ: ${TZ:-UTC}
+      UMASK: ${UMASK:-0022}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CREATE_VOLUME: "0"                 # multi-node: create volume manually
+      BRICK_HOST: ${BRICK_HOST:?set BRICK_HOST to the node's hostname/IP}
+      NFS_DISABLE: ${NFS_DISABLE:-1}
+    network_mode: host
+    privileged: true
+    cap_add: [ "SYS_ADMIN" ]
+    security_opt: [ "apparmor:unconfined" ]
+    devices: [ "/dev/fuse:/dev/fuse" ]
+    volumes:
+      - ${HOST_BRICK1:?set HOST_BRICK1 in .env}:/bricks/brick1:rw
+      - ./data/glusterd:/var/lib/glusterd
+      - ./data/logs:/var/log/glusterfs
+    healthcheck:
+      test: ["CMD-SHELL", "gluster --mode=script volume list >/dev/null 2>&1"]
+      interval: ${HC_INTERVAL:-10s}
+      timeout: ${HC_TIMEOUT:-5s}
+      retries: ${HC_RETRIES:-20}
+      start_period: ${HC_START_PERIOD:-30s}
+    restart: unless-stopped
+      PRIVATE_IP: ${PRIVATE_IP:-}
+      DATA_PORT_START: ${DATA_PORT_START:-49152}
+      DATA_PORT_END: ${DATA_PORT_END:-60999}
