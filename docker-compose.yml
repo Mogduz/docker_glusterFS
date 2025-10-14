@@ -10,7 +10,8 @@
 # -----------------------------------------------------------------------------
 name: gluster-solo-2bricks
 services:
-  # Service definitions. Standard: ein Gluster-Server-Container
+  # Service definitions.
+  # NOTE: ensure DATA_PORT_START..DATA_PORT_END matches MAX_PORT in .env so brick ports are reachable. Standard: ein Gluster-Server-Container
   gluster-solo:
     build: .
     container_name: ${CONTAINER_NAME}
