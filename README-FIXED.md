@@ -85,7 +85,7 @@ Der Entrypoint liest `BRICK_PATHS` (Container-Pfade) und erstellt das Volume dyn
 Gluster verweigert `localhost`/Loopback-Adressen beim `volume create` für Bricks. Verwende eine **nicht-loopback** IPv4/FQDN deines Hosts (`BRICK_HOST`), oder setze `PRIVATE_IP`. Der Entrypoint ermittelt sonst automatisch die erste globale IPv4. Siehe auch Gluster CLI-Parser, der `localhost/127.0.0.1` explizit ablehnt, und Mailinglisten-Beiträge mit identischer Fehlermeldung.
 
 ### Brick-Ports / Range
-Wir setzen standardmäßig `base-port=${DATA_PORT_START:-49152}` und `max-port 49251}` in `/etc/glusterfs/glusterd.vol`. Öffne in Firewalls die **24007/24008** sowie **je Brick einen Port** in dieser Range. Logs zeigen beim Start die übernommene `max-port`-Einstellung.
+Wir setzen standardmäßig `base-port=${DATA_PORT_START:-49152}` und `max-port=${DATA_PORT_END:-60999}` in `/etc/glusterfs/glusterd.vol`. Öffne in Firewalls die **24007/24008** sowie **je Brick einen Port** in dieser Range. Logs zeigen beim Start die übernommene `max-port`-Einstellung.
 
 
 ### `BRICK_HOST` vs. `PRIVATE_IP`
@@ -94,6 +94,3 @@ Der Container bekommt jetzt `PRIVATE_IP` aus `.env` explizit injiziert. Die Host
 2. Sonst, wenn `PRIVATE_IP` gesetzt **und** nicht-Loopback → verwenden.
 3. Sonst automatische Erkennung der ersten globalen IPv4.
 
-
-
-**Hinweis:** Für Solo-Deployments ist `BRICK_HOST=<Container-Hostname>` (z. B. `gluster-solo`) am robustesten. Der Entrypoint mappt diesen Hostnamen intern auf die Container-IP (kein Loopback), damit Gluster ihn als lokalen Peer akzeptiert.
