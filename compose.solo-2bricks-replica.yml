@@ -1,11 +1,11 @@
 version: "3.9"
 services:
   gluster-solo:
-    container_name: gluster-solo
+    container_name: ${CONTAINER_NAME:-gluster-solo}
     build:
       context: .
       dockerfile: Dockerfile
-    hostname: gluster-solo
+    hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
     environment:
       TZ: ${TZ:-UTC}
       UMASK: ${UMASK:-0022}
@@ -27,15 +27,7 @@ services:
       DATA_PORT_END: ${DATA_PORT_END:-60999}
       MAX_PORT: ${MAX_PORT:-60999}
       ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
-      HOSTNAME_GLUSTER: gluster-solo
     networks: [gluster-net]
-    ports:
-      - "${PRIVATE_IP}:${MGMT_PORT1:-24007}:${MGMT_PORT1:-24007}/tcp"
-      - "${PRIVATE_IP}:${MGMT_PORT2:-24008}:${MGMT_PORT2:-24008}/tcp"
-      - "${PRIVATE_IP}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}/tcp"
-      - "24007:24007/tcp"
-      - "24008:24008/tcp"
-      - "49152-49251:49152-49251/tcp"
     privileged: true
     cap_add: ["SYS_ADMIN"]
     security_opt: ["apparmor:unconfined"]
