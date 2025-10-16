@@ -28,6 +28,10 @@ services:
       MAX_PORT: ${MAX_PORT:-60999}
       ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
     networks: [gluster-net]
+    ports:
+      - "${PRIVATE_IP}:${MGMT_PORT1:-24007}:${MGMT_PORT1:-24007}/tcp"
+      - "${PRIVATE_IP}:${MGMT_PORT2:-24008}:${MGMT_PORT2:-24008}/tcp"
+      - "${PRIVATE_IP}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}/tcp"
     privileged: true
     cap_add: ["SYS_ADMIN"]
     security_opt: ["apparmor:unconfined"]
