@@ -28,3 +28,29 @@ upper bound. Adjust your firewall accordingly.
 - Avoid assigning your Docker bridge network to `10.1.0.0/16` to prevent routing clashes.
 - If you prefer, switch the service to `network_mode: host` and remove the `ports:` block
   entirely; then open ports in your host firewall instead.
+
+## Variant B — Bind to private IP (no host network)
+
+This variant publishes Gluster management and data ports **only** on the host's private IP from `.env` (`PRIVATE_IP`).
+The Internet-facing interface is not bound; `docker ps` will show exact mappings on the private IP.
+
+**Requirements**
+- `.env`: `PRIVATE_IP` set (e.g., `10.0.1.2`).
+- `DATA_PORT_START=49152`, `DATA_PORT_END=60999`, `MAX_PORT=60999` kept consistent.
+- Host brick paths exist and are mapped.
+
+**Start**
+```bash
+docker compose -f compose.bound-to-private.yml up -d --build
+```
+
+**Verification**
+```bash
+docker ps | grep gluster-solo
+gluster volume status
+```
+
+**Client mount**
+```bash
+mount -t glusterfs ${PRIVATE_IP}:/gv0 /mnt/gluster
+```
