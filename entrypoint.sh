@@ -3,20 +3,6 @@ set -Eeuo pipefail
 # ---------------------------------------------
 # Server identity for brick endpoints (prefer PRIVATE_IP)
 # ---------------------------------------------
-pick_server_identity() {
-  local cand=""
-  if [[ -n "${PRIVATE_IP:-}" && "${PRIVATE_IP}" != 127.* && "${PRIVATE_IP}" != "::1" ]]; then
-    cand="${PRIVATE_IP}"
-  fi
-  [[ -z "$cand" ]] && cand="${HOSTNAME_GLUSTER:-gluster-solo}"
-  echo "$cand"
-}
-export BRICK_HOST="$(pick_server_identity)"
-ensure_glusterd_vol
-
-# ---------------------------------------------
-# Enforce glusterd.vol with port window & address family
-# ---------------------------------------------
 ensure_glusterd_vol() {
   : "${DATA_PORT_START:=49152}"
   : "${MAX_PORT:=60999}"
@@ -32,6 +18,23 @@ volume management
 end-volume
 EOF
 }
+
+pick_server_identity() {
+  local cand=""
+  if [[ -n "${PRIVATE_IP:-}" && "${PRIVATE_IP}" != 127.* && "${PRIVATE_IP}" != "::1" ]]; then
+    cand="${PRIVATE_IP}"
+  fi
+  [[ -z "$cand" ]] && cand="${HOSTNAME_GLUSTER:-gluster-solo}"
+  echo "$cand"
+}
+export BRICK_HOST="$(pick_server_identity)"
+
+
+
+# ---------------------------------------------
+# Enforce glusterd.vol with port window & address family
+# ---------------------------------------------
+
 
 
 ts(){ date -u +"%Y-%m-%dT%H:%M:%SZ"; }
