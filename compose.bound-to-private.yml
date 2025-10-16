@@ -1,0 +1,47 @@
+version: "3.9"
+services:
+  gluster-solo:
+    container_name: ${CONTAINER_NAME:-gluster-solo}
+    image: ${COMPOSE_PROJECT_NAME:-docker_glusterfs}-gluster-solo
+    hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      UMASK: ${UMASK:-0022}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PRIVATE_IP: ${PRIVATE_IP:-}
+      MGMT_PORT1: ${MGMT_PORT1:-24007}
+      MGMT_PORT2: ${MGMT_PORT2:-24008}
+      DATA_PORT_START: ${DATA_PORT_START:-49152}
+      DATA_PORT_END: ${DATA_PORT_END:-60999}
+      MAX_PORT: ${MAX_PORT:-60999}
+      ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
+      MODE: ${MODE:-init}
+      VOLNAME: ${VOLNAME:-gv0}
+      VTYPE: ${VTYPE:-replica}
+      REPLICA: ${REPLICA:-2}
+      TRANSPORT: ${TRANSPORT:-tcp}
+      CREATE_VOLUME: ${CREATE_VOLUME:-1}
+      ALLOW_FORCE_CREATE: ${ALLOW_FORCE_CREATE:-1}
+      VOL_OPTS: ${VOL_OPTS:-performance.client-io-threads=on,cluster.quorum-type=auto}
+      AUTH_ALLOW: ${AUTH_ALLOW:-10.0.1.0/24}
+      NFS_DISABLE: ${NFS_DISABLE:-1}
+    networks:
+      - gluster-net
+    ports:
+      - "${PRIVATE_IP}:${MGMT_PORT1:-24007}:${MGMT_PORT1:-24007}/tcp"
+      - "${PRIVATE_IP}:${MGMT_PORT2:-24008}:${MGMT_PORT2:-24008}/tcp"
+      - "${PRIVATE_IP}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}/tcp"
+    volumes:
+      - ${HOST_BRICK1:-/mnt/gluster/brick1}:/bricks/brick1
+      - ${HOST_BRICK2:-/home/gluster/brick2}:/bricks/brick2
+      - gluster-state:/var/lib/glusterd
+      - gluster-logs:/var/log/glusterfs
+
+networks:
+  gluster-net:
+    driver: bridge
+
+volumes:
+  gluster-state:
+  gluster-logs:
