@@ -54,3 +54,14 @@ gluster volume status
 ```bash
 mount -t glusterfs ${PRIVATE_IP}:/gv0 /mnt/gluster
 ```
+
+### Auto-override (recommended)
+
+If you want these bindings to apply to **any** existing compose file (even those with `network_mode: host`),
+use the provided `docker-compose.override.yml` (already included). Compose will merge it automatically:
+
+```bash
+docker compose up -d --build
+```
+
+The override disables `network_mode: host`, creates a bridge network, and publishes all required ports **on `${PRIVATE_IP}` only**.
