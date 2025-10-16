@@ -94,3 +94,6 @@ Der Container bekommt jetzt `PRIVATE_IP` aus `.env` explizit injiziert. Die Host
 2. Sonst, wenn `PRIVATE_IP` gesetzt **und** nicht-Loopback → verwenden.
 3. Sonst automatische Erkennung der ersten globalen IPv4.
 
+
+
+**Hinweis:** Für Solo-Deployments ist `BRICK_HOST=<Container-Hostname>` (z. B. `gluster-solo`) am robustesten. Der Entrypoint mappt diesen Hostnamen intern auf die Container-IP (kein Loopback), damit Gluster ihn als lokalen Peer akzeptiert.
