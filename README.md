@@ -12,7 +12,7 @@ management `24007` but failed to reach brick ports → `All subvolumes are down`
 
 ## Fix
 
-We now publish `49152–60999` to match `MAX_PORT=60999` and cap Gluster to that same
+We now publish `49152–49251` to match `MAX_PORT=60999` and cap Gluster to that same
 upper bound. Adjust your firewall accordingly.
 
 ## Quick start
