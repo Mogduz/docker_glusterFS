@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+:
+: "${DATA_PORT_END:=}"
+# Backward-compat: prefer DATA_PORT_END if provided
+if [[ -n "${DATA_PORT_END}" ]]; then MAX_PORT="${DATA_PORT_END}"; fi
 # ---------------------------------------------
 # Server identity for brick endpoints (prefer PRIVATE_IP)
 # ---------------------------------------------
