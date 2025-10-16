@@ -1,52 +1,40 @@
 services:
   gluster-solo:
-    container_name: ${CONTAINER_NAME:-gluster-solo}
     build:
       context: .
-      dockerfile: Dockerfile
-    hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
+    image: docker_glusterfs-gluster-solo:local
+    container_name: gluster-solo
+    hostname: gluster-solo
     environment:
-      TZ: ${TZ:-UTC}
-      UMASK: ${UMASK:-0022}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      MODE: ${MODE:-init}
-      VOLNAME: ${VOLNAME:-gv0}
-      VTYPE: ${VTYPE:-replica}
-      REPLICA: ${REPLICA:-2}
-      TRANSPORT: ${TRANSPORT:-tcp}
-      CREATE_VOLUME: ${CREATE_VOLUME:-1}
-      ALLOW_FORCE_CREATE: ${ALLOW_FORCE_CREATE:-1}
-      VOL_OPTS: ${VOL_OPTS:-performance.client-io-threads=on,cluster.quorum-type=auto}
-      AUTH_ALLOW: ${AUTH_ALLOW:-10.0.1.0/24}
-      NFS_DISABLE: ${NFS_DISABLE:-1}
-      PRIVATE_IP: ${PRIVATE_IP:-}
-      MGMT_PORT1: ${MGMT_PORT1:-24007}
-      MGMT_PORT2: ${MGMT_PORT2:-24008}
-      DATA_PORT_START: ${DATA_PORT_START:-49152}
-      DATA_PORT_END: ${DATA_PORT_END:-49251}
-      MAX_PORT: ${MAX_PORT:-60999}
-      ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
-    networks: [gluster-net]
-    ports:
-      - "${PRIVATE_IP}:${MGMT_PORT1:-24007}:${MGMT_PORT1:-24007}/tcp"
-      - "${PRIVATE_IP}:${MGMT_PORT2:-24008}:${MGMT_PORT2:-24008}/tcp"
-      - "${PRIVATE_IP}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-49251}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-49251}/tcp"
-    privileged: true
-    cap_add: ["SYS_ADMIN"]
-    security_opt: ["apparmor:unconfined"]
-    devices: ["/dev/fuse:/dev/fuse"]
+      # Leave BRICK_HOST empty to let the entrypoint resolve to the hostname
+      HOSTNAME_GLUSTER: gluster-solo
+      ADDRESS_FAMILY: inet
+      DATA_PORT_START: "49152"
+      MAX_PORT: "49251"
+      VOLNAME: gv0
+      REPLICA: "2"
+      TRANSPORT: tcp
+      NFS_DISABLE: "1"
+      AUTH_ALLOW: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+    # Map brick storage; adjust to your host paths if needed
     volumes:
-      - ${HOST_BRICK1:?set HOST_BRICK1 in .env}:/bricks/brick1:rw
-      - ${HOST_BRICK2:-/home/gluster/brick2}:/bricks/brick2:rw
-      - ./data/glusterd:/var/lib/glusterd
-      - ./data/logs:/var/log/glusterfs
-    healthcheck:
-      test: ["CMD-SHELL", "gluster --mode=script volume list >/dev/null 2>&1"]
-      interval: ${HC_INTERVAL:-10s}
-      timeout: ${HC_TIMEOUT:-5s}
-      retries: ${HC_RETRIES:-20}
-      start_period: ${HC_START_PERIOD:-30s}
-    restart: unless-stopped
+      - bricks:/bricks
+      - glusterd:/var/lib/glusterd
+    networks:
+      - gluster-net
+    ports:
+      - "24007:24007/tcp"
+      - "24008:24008/tcp"
+      - "49152-49251:49152-49251/tcp"
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    ulimits:
+      nofile: 65536
+
+volumes:
+  bricks: {}
+  glusterd: {}
 
 networks:
   gluster-net:
