@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  gluster-solo:
+    # Disable host network from base files
+    network_mode: ""
+    networks:
+      - gluster-net
+    ports:
+      - "${PRIVATE_IP}:${MGMT_PORT1:-24007}:${MGMT_PORT1:-24007}/tcp"
+      - "${PRIVATE_IP}:${MGMT_PORT2:-24008}:${MGMT_PORT2:-24008}/tcp"
+      - "${PRIVATE_IP}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}/tcp"
+
+networks:
+  gluster-net:
+    driver: bridge
