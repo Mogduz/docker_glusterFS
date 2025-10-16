@@ -1,4 +1,45 @@
 #!/usr/bin/env bash
+# --- SOLO_BRICK_HOST_AUTOFIX_BEGIN ---
+# Der Host in den Brick-Pfaden darf bei Single-Node nicht die nackte IP sein,
+# sonst hält Gluster ihn für einen *anderen* Peer: "not in 'Peer in Cluster' state".
+# Wir erzwingen deshalb einen lokalen Hostnamen.
+resolve_local_host() {
+  # Bevorzugt FQDN, fallback auf short
+  hn_fqdn="$(hostname -f 2>/dev/null || true)"
+  hn_short="$(hostname -s 2>/dev/null || true)"
+  if [ -n "$hn_fqdn" ] && [[ "$hn_fqdn" != "(none)" ]]; then
+    echo "$hn_fqdn"
+  elif [ -n "$hn_short" ]; then
+    echo "$hn_short"
+  else
+    echo "localhost"
+  fi
+}
+
+# Wenn BRICK_HOST eine IPv4 ist, ignorieren und lokalen Hostnamen verwenden.
+BRICK_HOST_IN="${BRICK_HOST:-}"
+if [[ "$BRICK_HOST_IN" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+  BRICK_HOST_RESOLVED="$(resolve_local_host)"
+else
+  # Falls leer, ebenfalls lokalen Hostnamen
+  if [ -z "$BRICK_HOST_IN" ]; then
+    BRICK_HOST_RESOLVED="$(resolve_local_host)"
+  else
+    BRICK_HOST_RESOLVED="$BRICK_HOST_IN"
+  fi
+fi
+
+# /etc/hosts absichern: Container-IP -> Hostname, damit Gluster sich selbst findet
+SELF_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [ -n "$SELF_IP" ]; then
+  if ! grep -qE "^$SELF_IP\s" /etc/hosts 2>/dev/null; then
+    echo "$SELF_IP $BRICK_HOST_RESOLVED" >> /etc/hosts
+  fi
+fi
+export BRICK_HOST="$BRICK_HOST_RESOLVED"
+echo "$(date -u +%FT%TZ) [INFO] resolved local BRICK_HOST=$BRICK_HOST"
+# --- SOLO_BRICK_HOST_AUTOFIX_END ---
+
 set -Eeuo pipefail
 # ---------------------------------------------
 # Server identity for brick endpoints (prefer PRIVATE_IP)
