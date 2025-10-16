@@ -91,12 +91,16 @@ pick_primary_ipv4() {
   return 1
 }
 
-resolve_brick_host() {
-  local cand="${BRICK_HOST:-}"
-  if is_loopback_host "$cand"; then cand=""; fi
+resolve_brick_host(){
+  local cand=""
+  if [[ -n "${BRICK_HOST:-}" ]]; then
+    cand="${BRICK_HOST}"
+  fi
+  if [[ -z "$cand" && -n "${HOSTNAME_GLUSTER:-}" ]]; then
+    cand="${HOSTNAME_GLUSTER}"
+  fi
   if [[ -z "$cand" && -n "${PRIVATE_IP:-}" ]]; then
     cand="${PRIVATE_IP}"
-    if is_loopback_host "$cand"; then cand=""; fi
   fi
   if [[ -z "$cand" ]]; then
     cand="$(pick_primary_ipv4 || true)"
@@ -113,7 +117,7 @@ resolve_brick_host() {
 }
 
 if ! getent hosts "$(hostname -s)" >/dev/null 2>&1; then
-  echo "127.0.1.1 $(hostname -s)" >> /etc/hosts || true
+  CIP="$(pick_primary_ipv4 || true)"; if [[ -n "$CIP" ]]; then echo "$CIP $(hostname -s)" >> /etc/hosts || true; fi
 fi
 
 conf="/etc/glusterfs/glusterd.vol"
