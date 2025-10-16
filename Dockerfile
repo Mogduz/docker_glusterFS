@@ -22,7 +22,8 @@ RUN mkdir -p /var/lib/glusterd /bricks/brick1
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-EXPOSE 24007 24008 49152-49251
+
+EXPOSE 24007 24008 49152-60999
 
 # run with tini as simple init to reap zombies
 ENTRYPOINT ["tini","--","bash","/usr/local/bin/entrypoint.sh"]
