@@ -1,5 +1,38 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+# ---------------------------------------------
+# Server identity for brick endpoints (prefer PRIVATE_IP)
+# ---------------------------------------------
+pick_server_identity() {
+  local cand=""
+  if [[ -n "${PRIVATE_IP:-}" && "${PRIVATE_IP}" != 127.* && "${PRIVATE_IP}" != "::1" ]]; then
+    cand="${PRIVATE_IP}"
+  fi
+  [[ -z "$cand" ]] && cand="${HOSTNAME_GLUSTER:-gluster-solo}"
+  echo "$cand"
+}
+export BRICK_HOST="$(pick_server_identity)"
+ensure_glusterd_vol
+
+# ---------------------------------------------
+# Enforce glusterd.vol with port window & address family
+# ---------------------------------------------
+ensure_glusterd_vol() {
+  : "${DATA_PORT_START:=49152}"
+  : "${MAX_PORT:=60999}"
+  : "${ADDRESS_FAMILY:=inet}" # inet|inet6
+  install -d -m 0755 /etc/glusterfs
+  cat > /etc/glusterfs/glusterd.vol <<EOF
+volume management
+    type mgmt/glusterd
+    option working-directory /var/lib/glusterd
+    option transport.address-family ${ADDRESS_FAMILY}
+    option base-port ${DATA_PORT_START}
+    option max-port ${MAX_PORT}
+end-volume
+EOF
+}
+
 
 ts(){ date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 log(){ printf "%s [%s] %s\n" "$(ts)" "$1" "$2"; }
