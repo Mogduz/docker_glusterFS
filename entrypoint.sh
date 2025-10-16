@@ -3,6 +3,10 @@ set -Eeuo pipefail
 # ---------------------------------------------
 # Server identity for brick endpoints (prefer PRIVATE_IP)
 # ---------------------------------------------
+:
+: "${DATA_PORT_END:=}"
+# Backward-compat: prefer DATA_PORT_END if provided
+if [[ -n "${DATA_PORT_END}" ]]; then MAX_PORT="${DATA_PORT_END}"; fi
 ensure_glusterd_vol() {
   : "${DATA_PORT_START:=49152}"
   : "${MAX_PORT:=60999}"
@@ -116,7 +120,7 @@ if [[ -f "$conf" ]]; then
     sed -ri '/^volume management$/,/^end-volume$/ s/^end-volume$/    option base-port '"$DATA_PORT_START"'\n&/' "$conf"
   fi
   if grep -q "option\s\+max-port" "$conf"; then
-    sed -ri "s/^\s*option\s+max-port\s+\S+/    option max-port ${DATA_PORT_END}/" "$conf"
+    sed -ri "s/^\s*option\s+max-port\s+\S+/    option max-port ${MAX_PORT}/" "$conf"
   else
     sed -ri '/^volume management$/,/^end-volume$/ s/^end-volume$/    option max-port '"$DATA_PORT_END"'\n&/' "$conf"
   fi
@@ -127,7 +131,7 @@ volume management
     option working-directory /var/lib/glusterd
     option transport.socket.listen-port 24007
     option base-port ${DATA_PORT_START}
-    option max-port ${DATA_PORT_END}
+    option max-port ${MAX_PORT}
 end-volume
 EOF
 fi
