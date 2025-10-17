@@ -1,7 +1,0 @@
-Build & Run:
-  docker compose -f compose.solo-2bricks-replica.yml build
-  docker compose -f compose.solo-2bricks-replica.yml up -d
-  docker logs -f gluster-solo
-
-Firewall (Host):
-  sudo ./scripts/apply_firewall.sh
