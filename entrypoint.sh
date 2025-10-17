@@ -32,6 +32,12 @@ DATA_PORT_START=${DATA_PORT_START:-49152}
 DATA_PORT_END=${DATA_PORT_END:-60999}
 VOL_BOOTSTRAP=${VOL_BOOTSTRAP:-false}            # true|false (will be forced true in MODE=solo)
 VOLNAME=${VOLNAME:-gv0}
+
+MOUNT_ENABLE=${MOUNT_ENABLE:-true}                 # true|false -> attempt to mount the volume
+MOUNT_DIR=${MOUNT_DIR:-/mnt/gluster}               # where to mount inside the container
+MOUNT_OPTS=${MOUNT_OPTS:-defaults,_netdev}         # additional mount options
+MOUNT_ENDPOINT=${MOUNT_ENDPOINT:-localhost}        # host: use localhost in solo mode
+
 REPLICA=${REPLICA:-}                             # default depends on MODE
 TRANSPORT=${TRANSPORT:-tcp}
 NFS_DISABLE=${NFS_DISABLE:-true}
@@ -136,6 +142,7 @@ ensure_replica_defaults_for_mode() {
 
 
 bootstrap_volume() {
+    mount_volume
     is_true "$VOL_BOOTSTRAP" || { log "VOL_BOOTSTRAP=false -> skipping"; return 0; }
     if "$GLUSTER_BIN" --mode=script volume info "$VOLNAME" >/dev/null 2>&1; then
         log "Volume $VOLNAME already exists"
@@ -145,8 +152,22 @@ bootstrap_volume() {
     host="$(pick_hostname)"
     bricks="$(discover_bricks)"
     if [ -z "$bricks" ]; then
-        warn "No bricks discovered; cannot bootstrap volume"
-        return 0
+        if [ "$MODE" = "solo" ]; then
+            : "${REPLICA:=2}"
+            log "No bricks discovered; creating $REPLICA default bricks under /bricks"
+            bricks=""
+            i=1
+            while [ "$i" -le "$REPLICA" ]; do
+                d="/bricks/brick${i}"
+                mkdir -p "$d"
+                bricks="$bricks $d"
+                i=$((i+1))
+            done
+            bricks="$(printf '%s\n' $bricks)"
+        else
+            warn "No bricks discovered; cannot bootstrap volume"
+            return 0
+        fi
     fi
 
     # Ensure brick count fits replica multiplier
@@ -215,6 +236,35 @@ peer_probe_and_wait() {
         sleep 2
     done
 }
+is_mounted() {
+    # returns 0 if mountpoint is mounted
+    mp="$1"
+    awk -v m="$mp" 'BEGIN{rc=1} $2==m{rc=0} END{exit rc}' /proc/mounts
+}
+
+mount_volume() {
+    is_true "$MOUNT_ENABLE" || { log "MOUNT_ENABLE=false -> skipping mount"; return 0; }
+    [ -n "$VOLNAME" ] || die "VOLNAME is empty"
+    [ -d "$MOUNT_DIR" ] || mkdir -p "$MOUNT_DIR"
+
+    if is_mounted "$MOUNT_DIR"; then
+        log "Already mounted: $MOUNT_DIR"
+        return 0
+    fi
+
+    if ! command -v mount.glusterfs >/dev/null 2>&1; then
+        warn "mount.glusterfs not found; cannot mount gluster volume (install glusterfs-client)"
+        return 0
+    fi
+
+    endpoint="${MOUNT_ENDPOINT}:${VOLNAME}"
+    log "Mounting ${endpoint} at ${MOUNT_DIR} (opts=${MOUNT_OPTS})"
+    if ! mount -t glusterfs -o "$MOUNT_OPTS" "$endpoint" "$MOUNT_DIR"; then
+        warn "Failed to mount ${endpoint} at ${MOUNT_DIR}"
+        return 1
+    fi
+    log "Mounted ${endpoint} at ${MOUNT_DIR}"
+}
 
 forward_signals() {
     pid="$1"
@@ -258,6 +308,7 @@ main() {
 
     ensure_replica_defaults_for_mode
     bootstrap_volume
+    mount_volume
 
     # Wait on glusterd
     wait "$gpid"
