@@ -9,3 +9,4 @@ tags:
   - testing
 # Whether to push to registry by default
 push: True
+MODE: solo  # brick|host|solo
