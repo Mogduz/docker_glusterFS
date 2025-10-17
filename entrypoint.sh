@@ -1,265 +1,254 @@
-#!/usr/bin/env bash
-# --- SOLO_BRICK_HOST_AUTOFIX_BEGIN ---
-# Der Host in den Brick-Pfaden darf bei Single-Node nicht die nackte IP sein,
-# sonst hält Gluster ihn für einen *anderen* Peer: "not in 'Peer in Cluster' state".
-# Wir erzwingen deshalb einen lokalen Hostnamen.
-resolve_local_host() {
-  # Bevorzugt FQDN, fallback auf short
-  hn_fqdn="$(hostname -f 2>/dev/null || true)"
-  hn_short="$(hostname -s 2>/dev/null || true)"
-  if [ -n "$hn_fqdn" ] && [[ "$hn_fqdn" != "(none)" ]]; then
-    echo "$hn_fqdn"
-  elif [ -n "$hn_short" ]; then
-    echo "$hn_short"
-  else
-    echo "localhost"
-  fi
-}
+#!/bin/sh
+# GlusterFS server entrypoint (POSIX sh) with MODE support: brick|host|solo
 
-# Wenn BRICK_HOST eine IPv4 ist, ignorieren und lokalen Hostnamen verwenden.
-BRICK_HOST_IN="${BRICK_HOST:-}"
-if [[ "$BRICK_HOST_IN" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-  BRICK_HOST_RESOLVED="$(resolve_local_host)"
-else
-  # Falls leer, ebenfalls lokalen Hostnamen
-  if [ -z "$BRICK_HOST_IN" ]; then
-    BRICK_HOST_RESOLVED="$(resolve_local_host)"
-  else
-    BRICK_HOST_RESOLVED="$BRICK_HOST_IN"
-  fi
-fi
+set -eu
 
-# /etc/hosts absichern: Container-IP -> Hostname, damit Gluster sich selbst findet
-SELF_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-if [ -n "$SELF_IP" ]; then
-  if ! grep -qE "^$SELF_IP\s" /etc/hosts 2>/dev/null; then
-    echo "$SELF_IP $BRICK_HOST_RESOLVED" >> /etc/hosts
-  fi
-fi
-export BRICK_HOST="$BRICK_HOST_RESOLVED"
-echo "$(date -u +%FT%TZ) [INFO] resolved local BRICK_HOST=$BRICK_HOST"
-# --- SOLO_BRICK_HOST_AUTOFIX_END ---
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+GLUSTERD_BIN=${GLUSTERD_BIN:-/usr/sbin/glusterd}
+GLUSTER_BIN=${GLUSTER_BIN:-/usr/sbin/gluster}
+GLUSTERD_VOL=${GLUSTERD_VOL:-/etc/glusterfs/glusterd.vol}
 
-set -Eeuo pipefail
-# ---------------------------------------------
-# Server identity for brick endpoints (prefer PRIVATE_IP)
-# ---------------------------------------------
-ensure_glusterd_vol() {
-  : "${DATA_PORT_START:=49152}"
-  : "${MAX_PORT:=60999}"
-  : "${ADDRESS_FAMILY:=inet}" # inet|inet6
-  install -d -m 0755 /etc/glusterfs
-  cat > /etc/glusterfs/glusterd.vol <<EOF
-volume management
-    type mgmt/glusterd
-    option working-directory /var/lib/glusterd
-    option transport.address-family ${ADDRESS_FAMILY}
-    option base-port ${DATA_PORT_START}
-    option max-port ${MAX_PORT}
-end-volume
-EOF
-}
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+warn() { log "WARN: $*"; }
+die() { log "ERROR: $*"; exit 1; }
 
-pick_server_identity() {
-  local cand=""
-  if [[ -n "${PRIVATE_IP:-}" && "${PRIVATE_IP}" != 127.* && "${PRIVATE_IP}" != "::1" ]]; then
-    cand="${PRIVATE_IP}"
-  fi
-  [[ -z "$cand" ]] && cand="${HOSTNAME_GLUSTER:-gluster-solo}"
-  echo "$cand"
-}
-export BRICK_HOST="$(pick_server_identity)"
+# ---------- Defaults (can be overridden by env) ----------
+MODE=${MODE:-solo}                               # brick|host|solo
+ADDRESS_FAMILY=${ADDRESS_FAMILY:-inet}           # inet|inet6
+BIND_ADDR=${BIND_ADDR:-${PRIVATE_IP:-}}          # optional bind address
+DATA_PORT_START=${DATA_PORT_START:-49152}
+DATA_PORT_END=${DATA_PORT_END:-60999}
+VOL_BOOTSTRAP=${VOL_BOOTSTRAP:-false}            # true|false (will be forced true in MODE=solo)
+VOLNAME=${VOLNAME:-gv0}
+REPLICA=${REPLICA:-}                             # default depends on MODE
+TRANSPORT=${TRANSPORT:-tcp}
+NFS_DISABLE=${NFS_DISABLE:-true}
+AUTH_ALLOW=${AUTH_ALLOW:-}                        # e.g. 10.0.0.0/8,192.168.0.0/16
+VOL_OPTS=${VOL_OPTS:-}                            # CSV: key=value,key=value
 
+BRICK_DIRS=${BRICK_DIRS:-}                        # CSV of absolute paths; if empty -> /bricks/*
 
+# Cluster join/init knobs (used in MODE=host)
+PEERS=${PEERS:-}                                  # CSV of hostnames/IPs to peer probe
+REQUIRE_ALL_PEERS=${REQUIRE_ALL_PEERS:-false}     # true|false
 
-# ---------------------------------------------
-# Enforce glusterd.vol with port window & address family
-# ---------------------------------------------
+GLUSTERD_READY_TIMEOUT=${GLUSTERD_READY_TIMEOUT:-120}
+PEER_WAIT_TIMEOUT=${PEER_WAIT_TIMEOUT:-180}
 
-
-
-ts(){ date -u +"%Y-%m-%dT%H:%M:%SZ"; }
-log(){ printf "%s [%s] %s\n" "$(ts)" "$1" "$2"; }
-info(){ log INFO "$*"; }
-warn(){ log WARN "$*"; }
-err(){  log ERROR "$*"; }
-
-: "${VOLNAME:=gv0}"
-: "${REPLICA:=2}"
-: "${TRANSPORT:=tcp}"
-: "${CREATE_VOLUME:=1}"
-: "${ALLOW_FORCE_CREATE:=1}"
-: "${VOL_OPTS:=performance.client-io-threads=on,cluster.quorum-type=auto}"
-: "${AUTH_ALLOW:=10.0.0.0/8}"
-: "${NFS_DISABLE:=1}"
-: "${BRICK_HOST:=}"
-: "${BRICK_PATHS:=}"
-: "${DATA_PORT_START:=49152}"
-: "${DATA_PORT_END:=60999}"
-
-is_loopback_host() {
-  local h="$1"
-  [[ -z "$h" ]] && return 0
-  [[ "$h" == "localhost" ]] && return 0
-  [[ "$h" == "localhost.localdomain" ]] && return 0
-  [[ "$h" == "ip6-localhost" ]] && return 0
-  if [[ "$h" =~ ^127\. ]] || [[ "$h" =~ ^0\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$h" == "::1" ]]; then
-    return 0
-  fi
-  if getent ahostsv4 "$h" >/dev/null 2>&1; then
-    local ip
-    ip="$(getent ahostsv4 "$h" | awk '{print $1; exit}')"
-    [[ "$ip" =~ ^127\. ]] && return 0
-    [[ "$ip" =~ ^0\. ]] && return 0
-  fi
-  return 1
-}
-
-pick_primary_ipv4() {
-  local ip
-  ip="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
-  if [[ -n "$ip" ]]; then echo "$ip"; return 0; fi
-  ip="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | head -n1 || true)"
-  if [[ -n "$ip" ]]; then echo "$ip"; return 0; fi
-  return 1
-}
-
-resolve_brick_host() {
-  local cand="${BRICK_HOST:-}"
-  if is_loopback_host "$cand"; then cand=""; fi
-  if [[ -z "$cand" && -n "${PRIVATE_IP:-}" ]]; then
-    cand="${PRIVATE_IP}"
-    if is_loopback_host "$cand"; then cand=""; fi
-  fi
-  if [[ -z "$cand" ]]; then
-    cand="$(pick_primary_ipv4 || true)"
-  fi
-  if [[ -z "$cand" ]]; then
-    err "Could not determine a non-loopback BRICK_HOST. Set BRICK_HOST=<this-node IPv4/FQDN> in .env."
-    return 1
-  fi
-  if is_loopback_host "$cand"; then
-    err "BRICK_HOST resolves to loopback (${cand}). Use a real interface IP or resolvable hostname."
-    return 1
-  fi
-  echo "$cand"
-}
-
-if ! getent hosts "$(hostname -s)" >/dev/null 2>&1; then
-  echo "127.0.1.1 $(hostname -s)" >> /etc/hosts || true
-fi
-
-conf="/etc/glusterfs/glusterd.vol"
-if [[ -f "$conf" ]]; then
-  if grep -q "option\s\+base-port" "$conf"; then
-    sed -ri "s/^\s*option\s+base-port\s+\S+/    option base-port ${DATA_PORT_START}/" "$conf"
-  else
-    sed -ri '/^volume management$/,/^end-volume$/ s/^end-volume$/    option base-port '"$DATA_PORT_START"'\n&/' "$conf"
-  fi
-  if grep -q "option\s\+max-port" "$conf"; then
-    sed -ri "s/^\s*option\s+max-port\s+\S+/    option max-port ${DATA_PORT_END}/" "$conf"
-  else
-    sed -ri '/^volume management$/,/^end-volume$/ s/^end-volume$/    option max-port '"$DATA_PORT_END"'\n&/' "$conf"
-  fi
-else
-  cat >"$conf" <<EOF
-volume management
-    type mgmt/glusterd
-    option working-directory /var/lib/glusterd
-    option transport.socket.listen-port 24007
-    option base-port ${DATA_PORT_START}
-    option max-port ${DATA_PORT_END}
-end-volume
-EOF
-fi
-
-mkdir -p /var/lib/glusterd /var/log/glusterfs
-
-info "starting glusterd (foreground, -N)"
-/usr/sbin/glusterd -N &
-GLUSTERD_PID=$!
-
-wait_glusterd(){
-  local t=${1:-120}
-  for ((i=0;i<t;i++)); do
-    if gluster --mode=script volume list >/dev/null 2>&1; then return 0; fi
-    sleep 1
-  done
-  err "glusterd did not become ready within ${t}s"; return 1
-}
-
-get_bricks(){
-  if [[ -n "$BRICK_PATHS" ]]; then
-    IFS=',' read -r -a arr <<< "$BRICK_PATHS"
-    printf '%s\n' "${arr[@]}"
-    return
-  fi
-  ls -d /bricks/brick* 2>/dev/null | sort -V || true
-}
-
-maybe_create_volume(){
-  [[ "$CREATE_VOLUME" == "1" ]] || { info "CREATE_VOLUME=0 -> skip"; return 0; }
-
-  if gluster --mode=script volume info "$VOLNAME" >/dev/null 2>&1; then
-    info "volume $VOLNAME already exists"; return 0
-  fi
-
-  mapfile -t bricks < <(get_bricks)
-  if [[ ${#bricks[@]} -eq 0 ]]; then
-    err "no bricks found under /bricks; set HOST_BRICK* in .env"; return 1
-  fi
-
-  if [[ "$REPLICA" -ge 2 ]]; then
-    if (( ${#bricks[@]} % REPLICA != 0 )); then
-      err "brick count ${#bricks[@]} not a multiple of REPLICA=$REPLICA"; return 1
+# ---------- Helpers ----------
+add_option_in_mgmt_block() {
+    # Usage: add_option_in_mgmt_block "key" "value"
+    key="$1"; val="$2"
+    [ -f "$GLUSTERD_VOL" ] || die "glusterd.vol not found at $GLUSTERD_VOL"
+    if grep -Eq "^[[:space:]]*option[[:space:]]+$key[[:space:]]+" "$GLUSTERD_VOL"; then
+        # replace existing value
+        sed -i "s|^\([[:space:]]*option[[:space:]]\+$key[[:space:]]\+\).*|\1$val|g" "$GLUSTERD_VOL"
+        return 0
     fi
-  fi
-
-  for b in "${bricks[@]}"; do mkdir -p "$b"; done
-
-  local host
-  host="$(resolve_brick_host)" || return 1
-  info "using BRICK_HOST=${host}"
-
-  specs=()
-  for b in "${bricks[@]}"; do
-    specs+=("${host}:${b}")
-  done
-
-  args=(volume create "$VOLNAME")
-  if [[ "$REPLICA" -ge 2 ]]; then args+=(replica "$REPLICA"); fi
-  args+=(transport "$TRANSPORT")
-  args+=("${specs[@]}")
-  [[ "$ALLOW_FORCE_CREATE" == "1" ]] && args+=(force)
-
-  info "creating: gluster ${args[*]}"
-  if ! gluster "${args[@]}"; then
-    err "volume create failed"; return 1
-  fi
-
-  if [[ -n "$VOL_OPTS" ]]; then
-    IFS=',' read -ra kvs <<< "$VOL_OPTS"
-    for kv in "${kvs[@]}"; do
-      [[ -n "$kv" ]] || continue
-      info "set ${kv}"
-      gluster volume set "$VOLNAME" "$kv" || true
-    done
-  fi
-
-  if [[ -n "$AUTH_ALLOW" ]]; then
-    info "set auth.allow=${AUTH_ALLOW}"
-    gluster volume set "$VOLNAME" auth.allow "$AUTH_ALLOW" || true
-  fi
-
-  [[ "$NFS_DISABLE" == "1" ]] && gluster volume set "$VOLNAME" nfs.disable on || true
-  info "starting volume $VOLNAME"
-  gluster volume start "$VOLNAME" || true
+    # insert before 'end-volume' of 'volume management' block
+    awk -v k="$key" -v v="$val" '
+        BEGIN{inblk=0}
+        /^volume[[:space:]]+management/ {inblk=1}
+        inblk && /^end-volume/ {print "    option " k " " v; inblk=0}
+        {print}
+    ' "$GLUSTERD_VOL" > "$GLUSTERD_VOL.tmp" && mv "$GLUSTERD_VOL.tmp" "$GLUSTERD_VOL"
 }
 
-(
-  wait_glusterd || exit 1
-  maybe_create_volume || true
-) &
+ensure_glusterd_config() {
+    log "Configuring glusterd.vol options"
+    # Address family
+    add_option_in_mgmt_block "transport.address-family" "$ADDRESS_FAMILY"
+    # Optional bind address
+    if [ -n "$BIND_ADDR" ]; then
+        add_option_in_mgmt_block "transport.socket.bind-address" "$BIND_ADDR"
+    fi
+    # Data port window
+    add_option_in_mgmt_block "base-port" "$DATA_PORT_START"
+    add_option_in_mgmt_block "max-port" "$DATA_PORT_END"
+    # Allow insecure RPC if desired (kept off by default)
+    if [ "${RPC_ALLOW_INSECURE:-}" = "on" ]; then
+        add_option_in_mgmt_block "rpc-auth-allow-insecure" "on"
+    fi
+}
 
-trap 'kill ${GLUSTERD_PID} 2>/dev/null || true' EXIT
-wait ${GLUSTERD_PID}
+wait_for_glusterd() {
+    i=0
+    until "$GLUSTER_BIN" --mode=script volume list >/dev/null 2>&1; do
+        i=$((i+1))
+        if [ "$i" -gt "$GLUSTERD_READY_TIMEOUT" ]; then
+            die "glusterd did not become ready in time"
+        fi
+        sleep 1
+    done
+    log "glusterd is ready"
+}
+
+pick_hostname() {
+    hn="$(hostname -f 2>/dev/null || true)"
+    [ -n "$hn" ] || hn="$(hostname 2>/dev/null || echo gluster)"
+    printf '%s' "$hn"
+}
+
+discover_bricks() {
+    if [ -n "$BRICK_DIRS" ]; then
+        IFS=, ; set -- $BRICK_DIRS ; unset IFS
+        for d in "$@"; do
+            [ -d "$d" ] || mkdir -p "$d"
+            printf '%s\n' "$d"
+        done
+        return 0
+    fi
+    if [ -d /bricks ]; then
+        for d in /bricks/*; do
+            [ -d "$d" ] || continue
+            printf '%s\n' "$d"
+        done
+    fi
+}
+
+ensure_replica_defaults_for_mode() {
+    case "$MODE" in
+        solo)
+            # default replica 2 for solo
+            [ -n "$REPLICA" ] || REPLICA=2
+            ;;
+        host|brick)
+            # do not force replica; leave as-is (may be set by user if VOL_BOOTSTRAP=true on host)
+            [ -n "$REPLICA" ] || REPLICA=2
+            ;;
+        *)
+            warn "Unknown MODE=$MODE; proceeding with defaults"
+            [ -n "$REPLICA" ] || REPLICA=2
+            ;;
+    esac
+}
+
+bootstrap_volume() {
+    [ "$VOL_BOOTSTRAP" = "true" ] || { log "VOL_BOOTSTRAP=false -> skipping"; return 0; }
+    if "$GLUSTER_BIN" --mode=script volume info "$VOLNAME" >/dev/null 2>&1; then
+        log "Volume $VOLNAME already exists"
+        return 0
+    fi
+
+    host="$(pick_hostname)"
+    bricks="$(discover_bricks)"
+    if [ -z "$bricks" ]; then
+        warn "No bricks discovered; cannot bootstrap volume"
+        return 0
+    fi
+
+    # Ensure brick count fits replica multiplier
+    set -- $bricks
+    count=$#
+    if [ $((count % REPLICA)) -ne 0 ]; then
+        warn "Brick count ($count) is not a multiple of replica ($REPLICA); volume create may fail"
+    fi
+
+    spec=""
+    for b in "$@"; do
+        spec="$spec ${host}:${b}"
+    done
+
+    log "Creating volume: $VOLNAME (replica=$REPLICA transport=$TRANSPORT)"
+    if ! "$GLUSTER_BIN" volume create "$VOLNAME" replica "$REPLICA" transport "$TRANSPORT" $spec force; then
+        die "Failed to create volume $VOLNAME"
+    fi
+
+    # Optional options
+    if [ "$NFS_DISABLE" = "true" ]; then
+        "$GLUSTER_BIN" volume set "$VOLNAME" nfs.disable on >/dev/null 2>&1 || true
+    fi
+    if [ -n "$AUTH_ALLOW" ]; then
+        "$GLUSTER_BIN" volume set "$VOLNAME" auth.allow "$AUTH_ALLOW" >/dev/null 2>&1 || true
+    fi
+    if [ -n "$VOL_OPTS" ]; then
+        IFS=, ; set -- $VOL_OPTS ; unset IFS
+        for kv in "$@"; do
+            key="${kv%%=*}"; val="${kv#*=}"
+            [ -n "$key" ] || continue
+            "$GLUSTER_BIN" volume set "$VOLNAME" "$key" "$val" >/dev/null 2>&1 || warn "Failed to set $key"
+        done
+    fi
+
+    "$GLUSTER_BIN" volume start "$VOLNAME" force || die "Failed to start volume $VOLNAME"
+    log "Volume $VOLNAME created and started"
+}
+
+peer_probe_and_wait() {
+    [ -n "$PEERS" ] || { log "No PEERS specified; skipping peer probe"; return 0; }
+    IFS=, ; set -- $PEERS ; unset IFS
+    for p in "$@"; do
+        log "Peer probing $p"
+        "$GLUSTER_BIN" peer probe "$p" >/dev/null 2>&1 || warn "peer probe $p failed (may already be in cluster)"
+    done
+
+    if [ "$REQUIRE_ALL_PEERS" != "true" ]; then
+        log "Not waiting for all peers (REQUIRE_ALL_PEERS=false)"
+        return 0
+    fi
+
+    log "Waiting for peers to be Connected (timeout ${PEER_WAIT_TIMEOUT}s)"
+    deadline=$(( $(date +%s) + PEER_WAIT_TIMEOUT ))
+    while : ; do
+        out="$("$GLUSTER_BIN" peer status 2>/dev/null || true)"
+        ok=1
+        for p in "$@"; do
+            printf '%s' "$out" | grep -q "Hostname: $p" && printf '%s' "$out" | sed -n '/Hostname: '"$p"'/,/^$/p' | grep -q 'State: Peer in Cluster (Connected)' || ok=0
+        done
+        if [ "$ok" -eq 1 ]; then
+            log "All peers are Connected"
+            break
+        fi
+        [ "$(date +%s)" -lt "$deadline" ] || { warn "Timed out waiting for peers"; break; }
+        sleep 2
+    done
+}
+
+forward_signals() {
+    pid="$1"
+    term() {
+        log "Forwarding SIGTERM to glusterd (pid $pid)"
+        kill -TERM "$pid" 2>/dev/null || true
+        wait "$pid" || true
+        exit 0
+    }
+    trap term TERM INT
+}
+
+main() {
+    log "MODE=$MODE"
+    ensure_glusterd_config
+
+    # Start glusterd in foreground
+    "$GLUSTERD_BIN" -N &
+    gpid=$!
+    forward_signals "$gpid"
+
+    wait_for_glusterd
+
+    case "$MODE" in
+        brick)
+            log "MODE=brick -> no volume bootstrap, no peer actions"
+            ;;
+        host)
+            log "MODE=host -> optional peer probe and optional volume bootstrap"
+            peer_probe_and_wait
+            ;;
+        solo)
+            log "MODE=solo -> will ensure sensible defaults and bootstrap volume locally"
+            VOL_BOOTSTRAP=true
+            ;;
+        *)
+            warn "Unknown MODE=$MODE -> treating as 'solo-like'"
+            VOL_BOOTSTRAP=true
+            ;;
+    esac
+
+    ensure_replica_defaults_for_mode
+    bootstrap_volume
+
+    # Wait on glusterd
+    wait "$gpid"
+}
+
+main "$@"
