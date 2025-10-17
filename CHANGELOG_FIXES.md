@@ -1,1 +1,0 @@
-- Komplett-Repo überarbeitet: Dockerfile fix, Compose-Normalisierung, .env Defaults, Firewall-Skript (FORWARD), YAML-Validierung.
