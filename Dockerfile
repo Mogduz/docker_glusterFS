@@ -10,6 +10,8 @@ RUN apt-get update \
 
 # Documented ports (publish via compose/run)
 EXPOSE 24007 24008 49152-60999
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Run glusterd in foreground (-N) under tini for proper signal handling
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
