@@ -3,6 +3,10 @@
 
 set -eu
 
+# enforce deterministic output for parsing
+export LANG=C
+export LC_ALL=C
+
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 GLUSTERD_BIN=${GLUSTERD_BIN:-/usr/sbin/glusterd}
 GLUSTER_BIN=${GLUSTER_BIN:-/usr/sbin/gluster}
@@ -11,6 +15,14 @@ GLUSTERD_VOL=${GLUSTERD_VOL:-/etc/glusterfs/glusterd.vol}
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 warn() { log "WARN: $*"; }
 die() { log "ERROR: $*"; exit 1; }
+
+# normalize boolean-ish env vars (1|y|yes|true|on)
+    is_true() {
+      case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        1|y|yes|true|on) return 0 ;;
+        *) return 1 ;;
+      esac
+    }
 
 # ---------- Defaults (can be overridden by env) ----------
 MODE=${MODE:-solo}                               # brick|host|solo
@@ -109,22 +121,22 @@ discover_bricks() {
 ensure_replica_defaults_for_mode() {
     case "$MODE" in
         solo)
-            # default replica 2 for solo
             [ -n "$REPLICA" ] || REPLICA=2
             ;;
         host|brick)
-            # do not force replica; leave as-is (may be set by user if VOL_BOOTSTRAP=true on host)
-            [ -n "$REPLICA" ] || REPLICA=2
+            # leave REPLICA as provided by user (no implicit default)
+            : ;
             ;;
         *)
-            warn "Unknown MODE=$MODE; proceeding with defaults"
-            [ -n "$REPLICA" ] || REPLICA=2
+            warn "Unknown MODE=$MODE; proceeding without changing REPLICA"
+            : ;
             ;;
     esac
 }
 
+
 bootstrap_volume() {
-    [ "$VOL_BOOTSTRAP" = "true" ] || { log "VOL_BOOTSTRAP=false -> skipping"; return 0; }
+    is_true "$VOL_BOOTSTRAP" || { log "VOL_BOOTSTRAP=false -> skipping"; return 0; }
     if "$GLUSTER_BIN" --mode=script volume info "$VOLNAME" >/dev/null 2>&1; then
         log "Volume $VOLNAME already exists"
         return 0
@@ -155,7 +167,7 @@ bootstrap_volume() {
     fi
 
     # Optional options
-    if [ "$NFS_DISABLE" = "true" ]; then
+    if is_true "$NFS_DISABLE"; then
         "$GLUSTER_BIN" volume set "$VOLNAME" nfs.disable on >/dev/null 2>&1 || true
     fi
     if [ -n "$AUTH_ALLOW" ]; then
@@ -182,7 +194,7 @@ peer_probe_and_wait() {
         "$GLUSTER_BIN" peer probe "$p" >/dev/null 2>&1 || warn "peer probe $p failed (may already be in cluster)"
     done
 
-    if [ "$REQUIRE_ALL_PEERS" != "true" ]; then
+    if ! is_true "$REQUIRE_ALL_PEERS"; then
         log "Not waiting for all peers (REQUIRE_ALL_PEERS=false)"
         return 0
     fi
