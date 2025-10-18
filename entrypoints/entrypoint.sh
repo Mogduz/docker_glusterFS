@@ -12,6 +12,25 @@
 
 set -eu
 
+# --- Verbosity controls (set VERBOSE=0|1|2 and/or DEBUG=1) ---
+VERBOSE=${VERBOSE:-1}
+DEBUG=${DEBUG:-0}
+GLUSTER_LOG_TAIL=${GLUSTER_LOG_TAIL:-200}
+
+info()  { log "INFO: $*"; }
+warn()  { log "WARN: $*"; }
+error() { log "ERROR: $*"; }
+debug() { [ "$DEBUG" = "1" ] || [ "$VERBOSE" -ge 2 ] && log "DEBUG: $*"; :; }
+
+maybe_run() {
+    # Usage: maybe_run cmd arg...
+    cmd="$1"; shift || true
+    if command -v "$cmd" >/dev/null 2>&1; then
+        "$cmd" "$@" || true
+    else
+        debug "command not found: $cmd"
+    fi
+}
 # enforce deterministic output for parsing
 export LANG=C
 export LC_ALL=C
@@ -77,6 +96,47 @@ GLUSTERD_READY_TIMEOUT=${GLUSTERD_READY_TIMEOUT:-120}
 PEER_WAIT_TIMEOUT=${PEER_WAIT_TIMEOUT:-180}
 
 # ---------- Helpers ----------
+show_mgmt_block() {
+    [ -f "$GLUSTERD_VOL" ] || { warn "glusterd.vol missing"; return 0; }
+    info "--- glusterd.vol: management block ---"
+    awk '
+        $1=="volume" && $2=="management"{inblk=1}
+        inblk{print}
+        $1=="end-volume" && inblk{inblk=0}
+    ' "$GLUSTERD_VOL" || true
+    info "--------------------------------------"
+}
+startup_diagnostics() {
+    info "Startup diagnostics"
+    info "  uid=$(id -u) gid=$(id -g) user=$(id -un 2>/dev/null || printf '?')"
+    info "  uname=$(uname -srmo 2>/dev/null || uname -a)"
+    info "  PATH=$PATH"
+    info "  GLUSTERD_BIN=$GLUSTERD_BIN GLUSTER_BIN=$GLUSTER_BIN"
+    info "  GLUSTERD_VOL=$GLUSTERD_VOL"
+    info "  MODE=$MODE ADDRESS_FAMILY=$ADDRESS_FAMILY BIND_ADDR=${BIND_ADDR:-}"
+    info "  PORT WINDOW=${DATA_PORT_START}-${DATA_PORT_END}"
+    info "  PEERS=${PEERS:-<none>}"
+    if [ -n "${VOLUMES_YAML:-}" ]; then
+        if [ -s "$VOLUMES_YAML" ]; then
+            info "  VOLUMES_YAML=$VOLUMES_YAML (present)"
+        else
+            warn "  VOLUMES_YAML=$VOLUMES_YAML (missing/empty)"
+        fi
+    fi
+    maybe_run gluster --version
+    maybe_run ip addr
+    maybe_run ip route
+}
+# Dump last lines of glusterd log for diagnostics
+dump_glusterd_log() {
+    log "--- glusterd.log (tail) ---"
+    if [ -f /var/log/glusterfs/glusterd.log ]; then
+        tail -n 200 /var/log/glusterfs/glusterd.log || true
+    else
+        log "No /var/log/glusterfs/glusterd.log yet"
+    fi
+    log "----------------------------"
+}
 # ---
 # Funktion: add_option_in_mgmt_block() {()
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
@@ -125,12 +185,25 @@ ensure_glusterd_config() {
 
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
-
 wait_for_glusterd() {
+    gpid="$1"
     i=0
+    log "Waiting for glusterd to become ready (timeout=${GLUSTERD_READY_TIMEOUT}s)"
     until "$GLUSTER_BIN" --mode=script volume list >/dev/null 2>&1; do
         i=$((i+1))
+            # progress tick
+            if [ $((i % 5)) -eq 0 ]; then
+                info "waiting... ${i}s (pid=${gpid:-?})"
+            fi
+        # If glusterd died, abort early with logs
+        if [ -n "${gpid:-}" ] && ! kill -0 "$gpid" 2>/dev/null; then
+            warn "glusterd exited prematurely (pid=$gpid)"
+            dump_glusterd_log
+            die "glusterd failed to start; see logs above"
+        fi
         if [ "$i" -gt "$GLUSTERD_READY_TIMEOUT" ]; then
+            warn "Timeout while waiting for glusterd"
+            dump_glusterd_log
             die "glusterd did not become ready in time"
         fi
         sleep 1
@@ -610,15 +683,21 @@ if [ -n "${VOLUMES_YAML:-}" ]; then
     fi
 fi
     log "MODE=$MODE"
-    ensure_glusterd_config
 
-    # Start glusterd in foreground
-    "$GLUSTERD_BIN" -N &
-    gpid=$!
-    forward_signals "$gpid"
+    startup_diagnostics
+ensure_glusterd_config
 
-    wait_for_glusterd
+# Start glusterd in foreground
+log "Starting glusterd (-N, foreground)"
+"$GLUSTERD_BIN" -N &
+gpid=$!
+log "glusterd started with pid=$gpid"
+forward_signals "$gpid"
 
+wait_for_glusterd "$gpid"
+    info "Initial gluster state:"
+    maybe_run gluster --mode=script volume list
+    maybe_run gluster --mode=script peer status
     case "$MODE" in
         brick)
             log "MODE=brick -> no volume bootstrap, no peer actions"
