@@ -7,11 +7,10 @@ services:
       dockerfile: Dockerfile
     hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
     environment:
-      LANG: C
       MODE: ${MODE:-init}
       ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
       DATA_PORT_START: ${DATA_PORT_START:-49152}
-      DATA_PORT_END: ${DATA_PORT_END:-60999}
+      DATA_PORT_END: ${DATA_PORT_END:-49251}
       VOL_BOOTSTRAP: ${VOL_BOOTSTRAP:-false}
       VOLNAME: ${VOLNAME:-gv0}
       REPLICA: ${REPLICA:-2}
@@ -21,27 +20,20 @@ services:
       VOL_OPTS: ${VOL_OPTS:-performance.client-io-threads=on,cluster.quorum-type=auto}
       PEERS: ${PEERS:-}
       REQUIRE_ALL_PEERS: ${REQUIRE_ALL_PEERS:-false}
-      TZ: ${TZ:-UTC}
-      UMASK: ${UMASK:-0022}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       VOLUMES_YAML: ${VOLUMES_YAML:-/etc/gluster/volumes.yml}
       VOLUMES: ${VOLUMES:-gv0}
       QUOTA_LIMITS: ${QUOTA_LIMITS:-}
       QUOTA_SOFT_PCT: ${QUOTA_SOFT_PCT:-}
-      VTYPE: ${VTYPE:-replica}
-      CREATE_VOLUME: ${CREATE_VOLUME:-1}
-      ALLOW_FORCE_CREATE: ${ALLOW_FORCE_CREATE:-1}
       NFS_DISABLE: ${NFS_DISABLE:-1}
       PRIVATE_IP: ${PRIVATE_IP:-}
       MGMT_PORT1: ${MGMT_PORT1:-24007}
       MGMT_PORT2: ${MGMT_PORT2:-24008}
-      MAX_PORT: ${MAX_PORT:-60999}
     networks:
     - gluster-net
     ports:
     - ${HOST_BIND_PREFIX:-${BIND_ON_PRIVATE_IP:+${PRIVATE_IP}:}}${MGMT_PORT1:-24007}:${MGMT_PORT1:-24007}/tcp
     - ${HOST_BIND_PREFIX:-${BIND_ON_PRIVATE_IP:+${PRIVATE_IP}:}}${MGMT_PORT2:-24008}:${MGMT_PORT2:-24008}/tcp
-    - ${HOST_BIND_PREFIX:-${BIND_ON_PRIVATE_IP:+${PRIVATE_IP}:}}${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-60999}/tcp
+    - ${HOST_BIND_PREFIX:-${BIND_ON_PRIVATE_IP:+${PRIVATE_IP}:}}${DATA_PORT_START:-49152}-${DATA_PORT_END:-49251}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-49251}/tcp
     volumes:
     - ${BRICK1_MAPPING:-/mnt/gluster/brick1:/bricks/brick1:rw}
     - ${BRICK2_MAPPING:-/mnt/gluster/brick2:/bricks/brick2:rw}
