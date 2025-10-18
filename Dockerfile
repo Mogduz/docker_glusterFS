@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      glusterfs-server glusterfs-client fuse3 tini ca-certificates \
+      glusterfs-server tini ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 # Documented ports (publish via compose/run)
