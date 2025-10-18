@@ -8,7 +8,10 @@
 # === [DOC-END] ===
 
 #!/usr/bin/env bash
-set -Eeo pipefail
+set -e
+# enable pipefail and errtrace if supported (dash/posix-safe)
+( set -o pipefail ) >/dev/null 2>&1 && set -o pipefail
+( set -E ) >/dev/null 2>&1 && set -E
 # --- Verbosity controls for solo-start ---
 : "${VERBOSE:=1}"
 : "${DEBUG:=0}"
