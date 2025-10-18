@@ -96,6 +96,40 @@ GLUSTERD_READY_TIMEOUT=${GLUSTERD_READY_TIMEOUT:-120}
 PEER_WAIT_TIMEOUT=${PEER_WAIT_TIMEOUT:-180}
 
 # ---------- Helpers ----------
+# Validate if an IP address is actually assigned to any interface inside the container
+is_addr_assigned() {
+    addr="$1"
+    [ -n "$addr" ] || return 1
+    # prefer iproute2 if available
+    if command -v ip >/dev/null 2>&1; then
+        if ip -o -4 addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$addr"; then
+            return 0
+        fi
+        if ip -o -6 addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$addr"; then
+            return 0
+        fi
+        return 1
+    fi
+    # fallback: hostname -I
+    if command -v hostname >/dev/null 2>&1; then
+        set -- $(hostname -I 2>/dev/null || true)
+        for a in "$@"; do [ "$a" = "$addr" ] && return 0; done
+    fi
+    return 1
+}
+
+# Remove an existing option line from 'volume management' block
+remove_option_in_mgmt_block() {
+    key="$1"
+    [ -f "$GLUSTERD_VOL" ] || return 0
+    awk -v k="$key" '
+        BEGIN{inblk=0}
+        /^volume[[:space:]]+management/ {inblk=1}
+        inblk && $1=="option" && $2==k {next}
+        {print}
+        inblk && /^end-volume/ {inblk=0}
+    ' "$GLUSTERD_VOL" > "$GLUSTERD_VOL.tmp" && mv "$GLUSTERD_VOL.tmp" "$GLUSTERD_VOL"
+}
 show_mgmt_block() {
     [ -f "$GLUSTERD_VOL" ] || { warn "glusterd.vol missing"; return 0; }
     info "--- glusterd.vol: management block ---"
@@ -168,9 +202,34 @@ ensure_glusterd_config() {
     log "Configuring glusterd.vol options"
     # Address family
     add_option_in_mgmt_block "transport.address-family" "$ADDRESS_FAMILY"
-    # Optional bind address
+# Strict bind handling
     if [ -n "$BIND_ADDR" ]; then
-        add_option_in_mgmt_block "transport.socket.bind-address" "$BIND_ADDR"
+        if is_addr_assigned "$BIND_ADDR"; then
+            info "Using strict bind-address: $BIND_ADDR"
+            add_option_in_mgmt_block "transport.socket.bind-address" "$BIND_ADDR"
+        else
+            error "BIND_ADDR=$BIND_ADDR is not assigned inside the container's network namespace."
+            error "If you want to bind to the host interface (e.g. $BIND_ADDR), run with network_mode: host (Linux)"
+            error "or attach the container to a macvlan on that subnet so the address exists in the container."
+            show_mgmt_block || true
+            die "Refusing to start with invalid bind-address"
+        fi
+    else
+        # Remove any stale bind option to avoid partial configs
+        remove_option_in_mgmt_block "transport.socket.bind-address"
+    fi
+    # Validate bind address
+    if [ -n "$BIND_ADDR" ]; then
+        if is_addr_assigned "$BIND_ADDR"; then
+            info "bind-address is assigned in container: $BIND_ADDR"
+            add_option_in_mgmt_block "transport.socket.bind-address" "$BIND_ADDR"
+        else
+            warn "BIND_ADDR=$BIND_ADDR not assigned inside container; removing/ignoring bind-address"
+            remove_option_in_mgmt_block "transport.socket.bind-address"
+        fi
+    else
+        # ensure no stale option remains
+        remove_option_in_mgmt_block "transport.socket.bind-address"
     fi
     # Data port window
     add_option_in_mgmt_block "base-port" "$DATA_PORT_START"
@@ -199,7 +258,7 @@ wait_for_glusterd() {
         if [ -n "${gpid:-}" ] && ! kill -0 "$gpid" 2>/dev/null; then
             warn "glusterd exited prematurely (pid=$gpid)"
             dump_glusterd_log
-            die "glusterd failed to start; see logs above"
+        die "glusterd failed to start; see logs above"
         fi
         if [ "$i" -gt "$GLUSTERD_READY_TIMEOUT" ]; then
             warn "Timeout while waiting for glusterd"
