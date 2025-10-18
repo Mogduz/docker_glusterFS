@@ -64,8 +64,8 @@ fatal() {
 require_vars() {
   missing=""
   for var in "$@"; do
-    # ${!var} expands the variable named by $var
-    if [ -z "${!var:-}" ]; then
+    eval "val=\${$var:-}"
+    if [ -z "$val" ]; then
       missing="$missing $var"
     fi
   done
