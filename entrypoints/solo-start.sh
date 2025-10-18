@@ -17,6 +17,22 @@ set -e
 : "${DEBUG:=0}"
 if [ "${TRACE:-0}" = "1" ]; then set -x; fi
 
+# === Early defaults (ensure VOLUMES_YAML has expected default) ===
+# (moved earlier)
+
+
+# helper: describe_dir (pretty-print path info)
+if ! command -v describe_dir >/dev/null 2>&1; then
+describe_dir() {
+  p="$1"
+  [ -n "$p" ] || return 0
+  if [ -d "$p" ]; then
+    log "Dir-Info: $p"
+    df -hP "$p" 2>/dev/null | sed -n '1,2p' || true
+    ls -al "$p" | sed -n '1,20p' || true
+  fi
+}
+fi
 # --- portable fallback logger (defined early) ---
 if ! command -v log >/dev/null 2>&1; then
   log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
@@ -76,10 +92,10 @@ require_vars() {
 
 # Define the set of wirklich benötigte Variablen je nach Modus.
 # Für 'solo' sind keine zwingend – wir prüfen aber konsistente Optionen.
-if [ -n "${VOLUMES_YAML:-}" ]; then
+if :; then
   require_vars VOLUMES_YAML
-  [ -r "$VOLUMES_YAML" ] || { warn "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar – fahre mit Defaults fort."; VOLUMES_YAML=""; }
-[ -s "$VOLUMES_YAML" ] || { warn "VOLUMES_YAML='$VOLUMES_YAML' ist leer – fahre mit Defaults fort."; VOLUMES_YAML=""; }
+  [ -r "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar."
+[ -s "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist leer."
 log "VOLUMES_YAML erkannt: $VOLUMES_YAML"
 fi
 
@@ -107,7 +123,7 @@ fi
 # Quelle festlegen: VOLUMES_YAML bevorzugt, sonst VOLUMES_FILE, sonst /etc/glusterfs/volumes.yml
 : "${GLUSTER_BIN:=/usr/sbin/gluster}"
 : "${GLUSTERD_BIN:=/usr/sbin/glusterd}"
-VOLUMES_YAML="${VOLUMES_YAML:-${VOLUMES_FILE:-}}"
+VOLUMES_YAML="${VOLUMES_YAML:-${VOLUMES_FILE:-/etc/gluster/volumes.yml}}"
 
 # Warten bis glusterd bereit ist
 # ---
@@ -411,7 +427,7 @@ log_volume_info() {
 # ---
 
 process_volumes_yaml() {
-  [ -r "$VOLUMES_YAML" ] || { warn "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar – fahre mit Defaults fort."; VOLUMES_YAML=""; }
+  [ -r "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar."
 log "Lese YAML-Spezifikation: $VOLUMES_YAML"
   # Sammle Optionen für jedes Volume
   VOL_OPTS=""
@@ -490,9 +506,9 @@ done
 # Prüfen (Pass 2): Nach Anlage sicherstellen, dass ALLE Bricks existieren & beschreibbar sind
 for d in $BRICK_DIRS; do
   [ -d "$d" ] && [ -w "$d" ] || fatal "Brick-Verzeichnis fehlt oder ist nicht beschreibbar: $d"
+  describe_dir "$d"
 done
 
-describe_dir "$d"
 # Jetzt, NACH der erfolgreichen Verifikation, sind die Bricks garantiert vorhanden
 BRICKS_READY=true
 
