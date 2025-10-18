@@ -14,7 +14,7 @@ services:
       dockerfile: Dockerfile
     hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
     environment:
-      MODE: solo
+      MODE: ${MODE:-solo}
       ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
       DATA_PORT_START: ${DATA_PORT_START:-49152}
       DATA_PORT_END: ${DATA_PORT_END:-49251}
