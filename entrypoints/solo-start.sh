@@ -94,7 +94,8 @@ require_vars() {
 # Für 'solo' sind keine zwingend – wir prüfen aber konsistente Optionen.
 if :; then
   require_vars VOLUMES_YAML
-  [ -r "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar."
+  [ -r "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar (prüfe Bind-Mount und Pfad)."
+
 [ -s "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist leer."
 log "VOLUMES_YAML erkannt: $VOLUMES_YAML"
 fi
@@ -124,6 +125,27 @@ fi
 : "${GLUSTER_BIN:=/usr/sbin/gluster}"
 : "${GLUSTERD_BIN:=/usr/sbin/glusterd}"
 VOLUMES_YAML="${VOLUMES_YAML:-${VOLUMES_FILE:-/etc/gluster/volumes.yml}}"
+# Fallbacks: falls die gesetzte Datei nicht lesbar ist, probiere Alternativen
+if [ -n "$VOLUMES_YAML" ] && [ ! -r "$VOLUMES_YAML" ]; then
+  for cand in \
+    "$VOLUMES_YAML" \
+    "/etc/gluster/volumes.yml" \
+    "/etc/gluster/volumes.yaml" \
+    "/etc/glusterfs/volumes.yml" \
+    "/etc/glusterfs/volumes.yaml"
+  do
+    if [ -r "$cand" ] && [ -s "$cand" ]; then
+      log "VOLUMES_YAML Fallback gefunden: $cand"
+      VOLUMES_YAML="$cand"
+      break
+    fi
+  done
+fi
+# Wenn immer noch nicht lesbar, gib Diagnose aus (hilfreich bei Bind-Mount-Problemen)
+if [ -n "$VOLUMES_YAML" ] && [ ! -r "$VOLUMES_YAML" ]; then
+  warn "volumes.yml nicht lesbar. Inhalte von /etc/gluster*:"
+  ls -al /etc/gluster* 2>/dev/null || true
+fi
 
 # Warten bis glusterd bereit ist
 # ---
@@ -427,7 +449,8 @@ log_volume_info() {
 # ---
 
 process_volumes_yaml() {
-  [ -r "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar."
+  [ -r "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar (prüfe Bind-Mount und Pfad)."
+
 log "Lese YAML-Spezifikation: $VOLUMES_YAML"
   # Sammle Optionen für jedes Volume
   VOL_OPTS=""
