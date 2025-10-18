@@ -1,0 +1,51 @@
+# Vollständiges Beispiel für **ein** Volume in der YAML, mit allen vom Entrypoint unterstützten Feldern.
+# Diese Datei zeigt die Struktur und mögliche Werte. Kommentare können entfernt werden.
+#
+# Unterstützte Schlüssel pro Volume-Eintrag:
+#   name               (Pflicht)        — Name des Gluster-Volumes
+#   replica            (optional)       — Replika-Faktor (integer). Änderung an bestehenden Volumes erfordert manuelle Migration.
+#   transport          (optional)       — Transporttyp, i.d.R. 'tcp'
+#   auth_allow         (optional)       — Komma-separierte Liste von CIDRs/IPs/Hostnames oder "*" für alle
+#                                         Leerstring "" -> setzt auth.allow zurück (Reset)
+#   nfs_disable        (optional,bool)  — true|false  -> wird zu nfs.disable on/off
+#   options            (optional,map)   — Beliebige 'gluster volume set' Optionen als key: value
+#   options_reset      (optional,CSV)   — Liste von Options-Namen, die mit 'gluster volume reset' zurückgesetzt werden
+#   quota.limit        (optional)       — z.B. 200G, 1T; "off"/"disable"/"0" deaktiviert quota
+#   quota.soft_limit_pct (optional,int) — z.B. 80 (setzt features.soft-limit auf 80%)
+#
+# Hinweise:
+# - Brick-Zuordnung wird über Compose/.env erledigt. Der Entrypoint erzeugt pro Volume automatisch Unterordner brickX/<VOLNAME>.
+# - Unbekannte Schlüssel werden geloggt und ignoriert.
+# - 'replica' wird NICHT live umgestellt (erfordert add/remove-brick & Rebalance); Abweichungen werden geloggt.
+# - Optionen sind idempotent: beim Start werden sie erneut gesetzt/gereset, falls nötig.
+#
+volumes:
+  - name: gv0
+    replica: 2               # optional (Standard im Solo-Modus)
+    transport: tcp           # optional
+
+    # Zugriffskontrolle:
+    auth_allow: 10.0.0.0/16,192.168.1.0/24
+    # Alternative: auf Default zurücksetzen -> auth_allow: ""
+
+    # NFS-Server für dieses Volume deaktivieren (empfohlen):
+    nfs_disable: true
+
+    # Gluster 'volume set' Optionen (Beispiele; nach Bedarf erweitern/ändern)
+    options:
+      cluster.quorum-type: auto
+      cluster.choose-local: on
+      performance.client-io-threads: on
+      performance.read-ahead: on
+      performance.quick-read: on
+      performance.io-cache: on
+      network.ping-timeout: 10
+      diagnostics.brick-sys-log-level: INFO
+
+    # Einzelne Optionen auf Default zurücksetzen (kommagetrennt)
+    options_reset: performance.io-thread-count,cluster.heal-timeout
+
+    # Quota-Konfiguration (optional)
+    quota:
+      limit: 200G            # "off" | "disable" | "0" -> Quota deaktivieren
+      soft_limit_pct: 80     # optional, z.B. 80 (%)
