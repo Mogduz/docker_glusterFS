@@ -74,7 +74,21 @@ read -r -p "Bitte Nummer wählen [1..${#COMPOSE_FILES[@]}]: " CHOICE
 
 SELECTED_COMPOSE="${COMPOSE_FILES[$((CHOICE-1))]}"
 compose_filename="$(basename -- "$SELECTED_COMPOSE")"
-info "Ausgewählt: ${compose_filename}"   # ohne .yml/.yaml
+info "Ausgewählt: ${compose_filename}"
+
+# --- Containername abfragen & validieren -------------------------------------
+read -r -p "Containername: " CONTAINER_NAME
+[[ -n "${CONTAINER_NAME// }" ]] || abort "Containername darf nicht leer sein."
+if [[ ! "$CONTAINER_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+  abort "Ungültiger Containername: Erlaubt sind Buchstaben/Ziffern/._- (nicht mit Sonderzeichen beginnen)."
+fi
+
+# --- Zielordner prüfen/anlegen ------------------------------------------------
+CONTAINERS_DIR="${PROJECT_DIR}/containers"
+TARGET_DIR="${CONTAINERS_DIR}/${CONTAINER_NAME}"
+mkdir -p -- "$TARGET_DIR" || abort "Konnte Zielordner nicht erstellen: $TARGET_DIR"
+[[ -d "$TARGET_DIR" && -w "$TARGET_DIR" ]] || abort "Zielordner nicht beschreibbar: $TARGET_DIR"
+   # ohne .yml/.yaml
 
 # Primärpfade laut Vorgabe:
 compose_base="${compose_filename%.*}"   # ohne .yml/.yaml
@@ -85,7 +99,7 @@ VOL_EXAMPLE_PRIMARY="${PROJECT_DIR}/examples/volume/volume.full.yml.example"
 ENV_EXAMPLE_FALLBACK1="${PROJECT_DIR}/examples/env/${compose_base}.env"
 ENV_EXAMPLE_FALLBACK2="${PROJECT_DIR}/examples/env/${compose_base}.env"
 VOL_EXAMPLE_FALLBACK1="${PROJECT_DIR}/examples/volume/volumes.yml.example"
-VOL_EXAMPLE_FALLBACK2="${PROJECT_DIR}/volume_examples/volume.full-example.yml"
+VOL_EXAMPLE_FALLBACK2="${PROJECT_DIR}/examples/volume/volumes.yml.example"
 
 ENV_SRC=""
 for cand in "$ENV_EXAMPLE_PRIMARY" "$ENV_EXAMPLE_FALLBACK1" "$ENV_EXAMPLE_FALLBACK2"; do
