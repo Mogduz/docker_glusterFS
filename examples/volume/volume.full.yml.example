@@ -1,3 +1,10 @@
+# === [DOC] Autogenerierte Inline-Dokumentation: volume.full.yml.example ===
+# Datei: examples/volume/volume.full.yml.example
+# Typ: YAML (Compose/Volumes/Beispiele).
+# Zweck: Deklarative Konfiguration (Container-Stack, Volume-Spezifikationen).
+# Hinweis: Kommentare erläutern Felder, sinnvolle Defaults und Sicherheitsüberlegungen.
+# === [DOC-END] ===
+
 # Vollständiges Beispiel für **ein** Volume in der YAML, mit allen vom Entrypoint unterstützten Feldern.
 # Diese Datei zeigt die Struktur und mögliche Werte. Kommentare können entfernt werden.
 #
