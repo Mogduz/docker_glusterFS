@@ -10,8 +10,9 @@ services:
   gluster-solo:
     container_name: ${CONTAINER_NAME:-gluster-solo}
     build:
-      context: ../..
+      context: ..
       dockerfile: Dockerfile
+    network_mode: host
     hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
     environment:
       MODE: ${MODE:-solo}
@@ -23,19 +24,6 @@ services:
       PRIVATE_IP: ${PRIVATE_IP:-}
       MGMT_PORT1: ${MGMT_PORT1:-24007}
       MGMT_PORT2: ${MGMT_PORT2:-24008}
-    networks:
-    - gluster-net
-    ports:
-    - ${HOST_BIND_PREFIX:-${BIND_ON_PRIVATE_IP:+${PRIVATE_IP}:}}${MGMT_PORT1:-24007}:${MGMT_PORT1:-24007}/tcp
-    - ${HOST_BIND_PREFIX:-${BIND_ON_PRIVATE_IP:+${PRIVATE_IP}:}}${MGMT_PORT2:-24008}:${MGMT_PORT2:-24008}/tcp
-    - ${HOST_BIND_PREFIX:-${BIND_ON_PRIVATE_IP:+${PRIVATE_IP}:}}${DATA_PORT_START:-49152}-${DATA_PORT_END:-49251}:${DATA_PORT_START:-49152}-${DATA_PORT_END:-49251}/tcp
-    volumes:
-    - ${BRICK1_MAPPING:-/mnt/gluster/brick1:/bricks/brick1:rw}
-    - ${BRICK2_MAPPING:-/mnt/gluster/brick2:/bricks/brick2:rw}
-    - ./data/glusterd:/var/lib/glusterd
-    - ./data/logs:/var/log/glusterfs
-    - ${VOLUMES_FILE:-./volumes.yml}:${VOLUMES_YAML:-/etc/gluster/volumes.yml}:ro
-    healthcheck:
       test:
       - CMD-SHELL
       - gluster --mode=script volume list >/dev/null 2>&1
