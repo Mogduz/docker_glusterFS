@@ -47,7 +47,6 @@ mapfile -t COMPOSE_FILES < <(
   find "$PROJECT_DIR/compose" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort
 )
 
-
 # --- Compose-Dateien ermitteln ------------------------------------------------
 mapfile -t COMPOSE_FILES < <(
   {
@@ -59,38 +58,23 @@ mapfile -t COMPOSE_FILES < <(
 (( ${#COMPOSE_FILES[@]} > 0 )) || abort "Keine Compose-Dateien im Projektordner gefunden."
 
 SELECTED_COMPOSE=""
-if (( ${#COMPOSE_FILES[@]} == 1 )); then
-  SELECTED_COMPOSE="${COMPOSE_FILES[0]}"
-  info "Eine Compose-Datei gefunden: $(basename "$SELECTED_COMPOSE")"
-else
-  echo "Gefundene Compose-Dateien:"
-  select f in "${COMPOSE_FILES[@]}"; do
-    [[ -n "${f:-}" ]] || { echo "Ungültige Auswahl."; continue; }
-    SELECTED_COMPOSE="$f"
-    break
-  done
-fi
+# --- Auswahl (immer numerisch, auch bei nur einer Datei) ----------------------
+(( ${#COMPOSE_FILES[@]} > 0 )) || abort "Keine Compose-Dateien im Ordner $PROJECT_DIR/compose gefunden."
 
-# --- Containername abfragen & validieren -------------------------------------
-read -r -p "Containername: " CONTAINER_NAME
-[[ -n "${CONTAINER_NAME// }" ]] || abort "Containername darf nicht leer sein."
-# Docker-konforme, einfache Validierung (Buchstaben/Ziffern/._-)
-if [[ ! "$CONTAINER_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
-  abort "Ungültiger Containername: Erlaubt sind Buchstaben/Ziffern/._- (nicht mit Sonderzeichen beginnen)."
-fi
+echo "Gefundene Compose-Dateien in $PROJECT_DIR/compose:"
+for i in "${!COMPOSE_FILES[@]}"; do
+  idx=$((i+1))
+  printf '  [%d] %s
+' "$idx" "$(basename -- "${COMPOSE_FILES[$i]}")"
+done
 
-# --- Zielordner prüfen/anlegen ------------------------------------------------
-CONTAINERS_DIR="${PROJECT_DIR}/containers"
-TARGET_DIR="${CONTAINERS_DIR}/${CONTAINER_NAME}"
+read -r -p "Bitte Nummer wählen [1..${#COMPOSE_FILES[@]}]: " CHOICE
+[[ "$CHOICE" =~ ^[0-9]+$ ]] || abort "Ungültige Eingabe: Bitte eine Zahl eingeben."
+(( CHOICE >= 1 && CHOICE <= ${#COMPOSE_FILES[@]} )) || abort "Nummer außerhalb des gültigen Bereichs."
 
-mkdir -p "$CONTAINERS_DIR"
-if [[ -e "$TARGET_DIR" ]]; then
-  abort "Der Containername '${CONTAINER_NAME}' ist bereits vergeben (${TARGET_DIR} existiert)."
-fi
-mkdir -p "$TARGET_DIR"
+SELECTED_COMPOSE="${COMPOSE_FILES[$((CHOICE-1))]}"
 
-# --- Pfade ableiten -----------------------------------------------------------
-compose_filename="$(basename -- "$SELECTED_COMPOSE")"
+info "Ausgewählt: ${compose_filename}"
 compose_base="${compose_filename%.*}"   # ohne .yml/.yaml
 
 # Primärpfade laut Vorgabe:
