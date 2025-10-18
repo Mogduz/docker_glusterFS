@@ -577,7 +577,7 @@ bootstrap_all_volumes() {
 #       soft_limit_pct: 80
 #
 # ---
-# Funktion: emit_yaml_specs() {
+emit_yaml_specs() {
     file="$1"
     [ -s "$file" ] || return 1
     awk '
