@@ -7,18 +7,12 @@ services:
       dockerfile: Dockerfile
     hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
     environment:
-      MODE: ${MODE:-init}
       MODE: ${MODE:-solo}
       ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
       DATA_PORT_START: ${DATA_PORT_START:-49152}
       DATA_PORT_END: ${DATA_PORT_END:-49251}
-      VOL_BOOTSTRAP: ${VOL_BOOTSTRAP:-true}
-      AUTH_ALLOW: ${AUTH_ALLOW:-10.0.1.0/24}
-      PEERS: ${PEERS:-}
-      REQUIRE_ALL_PEERS: ${REQUIRE_ALL_PEERS:-false}
-      VOLUMES_YAML: ${VOLUMES_YAML:-/etc/gluster/volumes.yml}
-      NFS_DISABLE: ${NFS_DISABLE:-1}
       VOL_BOOTSTRAP: true
+      VOLUMES_YAML: /etc/gluster/volumes.yml
       PRIVATE_IP: ${PRIVATE_IP:-}
       MGMT_PORT1: ${MGMT_PORT1:-24007}
       MGMT_PORT2: ${MGMT_PORT2:-24008}
