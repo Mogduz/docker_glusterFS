@@ -24,18 +24,17 @@ set -Eeuo pipefail
 # ------------------------------------------------------------------------------
 # ---
 # Funktion: 
-abort() {()
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
 abort() { echo "ERROR: $*" >&2; exit 1; }
 # ---
-# Funktion: info()  {()
+# Funktion: info()  
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 info()  { echo "• $*"; }
 # ---
-# Funktion: ok()    {()
+# Funktion: ok()    
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 ok()    { echo "✔ $*"; }
