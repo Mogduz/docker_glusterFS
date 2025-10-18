@@ -11,19 +11,11 @@ services:
       ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
       DATA_PORT_START: ${DATA_PORT_START:-49152}
       DATA_PORT_END: ${DATA_PORT_END:-49251}
-      VOL_BOOTSTRAP: ${VOL_BOOTSTRAP:-false}
-      VOLNAME: ${VOLNAME:-gv0}
-      REPLICA: ${REPLICA:-2}
-      TRANSPORT: ${TRANSPORT:-tcp}
-      BRICK_DIRS: ${BRICK_DIRS:-/bricks/brick1,/bricks/brick2}
+      VOL_BOOTSTRAP: ${VOL_BOOTSTRAP:-true}
       AUTH_ALLOW: ${AUTH_ALLOW:-10.0.1.0/24}
-      VOL_OPTS: ${VOL_OPTS:-performance.client-io-threads=on,cluster.quorum-type=auto}
       PEERS: ${PEERS:-}
       REQUIRE_ALL_PEERS: ${REQUIRE_ALL_PEERS:-false}
       VOLUMES_YAML: ${VOLUMES_YAML:-/etc/gluster/volumes.yml}
-      VOLUMES: ${VOLUMES:-gv0}
-      QUOTA_LIMITS: ${QUOTA_LIMITS:-}
-      QUOTA_SOFT_PCT: ${QUOTA_SOFT_PCT:-}
       NFS_DISABLE: ${NFS_DISABLE:-1}
       PRIVATE_IP: ${PRIVATE_IP:-}
       MGMT_PORT1: ${MGMT_PORT1:-24007}
