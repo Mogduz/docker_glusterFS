@@ -1,0 +1,25 @@
+# Gluster volumes specification (read by entrypoint.sh)
+volumes:
+  - name: gv0
+    replica: 2
+    transport: tcp
+    auth_allow: 10.0.0.0/24
+    # auth_allow: ""   # leerer String => reset auth.allow
+    nfs_disable: true
+    options:
+      performance.client-io-threads: on
+      cluster.quorum-type: auto
+    # Optional: einzelne Optionen zurücksetzen (CSV)
+    options_reset: performance.io-thread-count
+    quota:
+      limit: 200G
+      soft_limit_pct: 80
+
+  - name: gv1
+    replica: 2
+    transport: tcp
+    options:
+      performance.quick-read: on
+      performance.read-ahead: on
+    quota:
+      limit: 1T
