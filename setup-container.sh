@@ -73,11 +73,11 @@ read -r -p "Bitte Nummer wählen [1..${#COMPOSE_FILES[@]}]: " CHOICE
 (( CHOICE >= 1 && CHOICE <= ${#COMPOSE_FILES[@]} )) || abort "Nummer außerhalb des gültigen Bereichs."
 
 SELECTED_COMPOSE="${COMPOSE_FILES[$((CHOICE-1))]}"
-
-info "Ausgewählt: ${compose_filename}"
-compose_base="${compose_filename%.*}"   # ohne .yml/.yaml
+compose_filename="$(basename -- "$SELECTED_COMPOSE")"
+info "Ausgewählt: ${compose_filename}"   # ohne .yml/.yaml
 
 # Primärpfade laut Vorgabe:
+compose_base="${compose_filename%.*}"   # ohne .yml/.yaml
 ENV_EXAMPLE_PRIMARY="${PROJECT_DIR}/examples/env/${compose_base}.env.example"
 VOL_EXAMPLE_PRIMARY="${PROJECT_DIR}/examples/volume/volume.full.yml.example"
 
