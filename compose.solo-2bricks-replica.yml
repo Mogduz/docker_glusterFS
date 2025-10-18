@@ -13,9 +13,6 @@ services:
       DATA_PORT_END: "${DATA_PORT_END:-60999}"
       VOL_BOOTSTRAP: "${VOL_BOOTSTRAP:-false}"
       VOLNAME: "${VOLNAME:-gv0}"
-      MOUNT_ENABLE: "${MOUNT_ENABLE:-1}"
-      MOUNT_DIR: "${MOUNT_DIR:-/mnt/gluster}"
-      MOUNT_OPTS: "${MOUNT_OPTS:-defaults,_netdev}"
       REPLICA: "${REPLICA:-2}"
       TRANSPORT: "${TRANSPORT:-tcp}"
       BRICK_DIRS: "${BRICK_DIRS:-/bricks/brick1,/bricks/brick2}"
@@ -28,6 +25,10 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MODE: ${MODE:-init}
       VOLNAME: ${VOLNAME:-gv0}
+      VOLUMES_YAML: "${VOLUMES_YAML:-/etc/gluster/volumes.yml}"
+      VOLUMES: "${VOLUMES:-gv0}"
+      QUOTA_LIMITS: "${QUOTA_LIMITS:-}"
+      QUOTA_SOFT_PCT: "${QUOTA_SOFT_PCT:-}"
       VTYPE: ${VTYPE:-replica}
       REPLICA: ${REPLICA:-2}
       TRANSPORT: ${TRANSPORT:-tcp}
@@ -53,13 +54,7 @@ services:
       - "${BRICK2_MAPPING:-/mnt/gluster/brick2:/bricks/brick2:rw}"
       - ./data/glusterd:/var/lib/glusterd
       - ./data/logs:/var/log/glusterfs
-    devices:
-      - /dev/fuse:/dev/fuse
-    cap_add:
-      - SYS_ADMIN
-    security_opt:
-      - apparmor:unconfined
-      - seccomp:unconfined
+      - "${VOLUMES_FILE:-./volumes.yml}:${VOLUMES_YAML:-/etc/gluster/volumes.yml}:ro"
     healthcheck:
       test: ["CMD-SHELL", "gluster --mode=script volume list >/dev/null 2>&1"]
       interval: ${HC_INTERVAL:-10s}
