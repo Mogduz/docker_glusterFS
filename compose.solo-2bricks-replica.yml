@@ -25,7 +25,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MODE: ${MODE:-init}
       VOLNAME: ${VOLNAME:-gv0}
-      VOLUMES_YAML: "${VOLUMES_YAML:-/etc/gluster/volumes.yml}"
       VOLUMES: "${VOLUMES:-gv0}"
       QUOTA_LIMITS: "${QUOTA_LIMITS:-}"
       QUOTA_SOFT_PCT: "${QUOTA_SOFT_PCT:-}"
@@ -54,7 +53,7 @@ services:
       - "${BRICK2_MAPPING:-/mnt/gluster/brick2:/bricks/brick2:rw}"
       - ./data/glusterd:/var/lib/glusterd
       - ./data/logs:/var/log/glusterfs
-      - "${VOLUMES_FILE:-./volumes.yml}:${VOLUMES_YAML:-/etc/gluster/volumes.yml}:ro"
+      - "${VOLUMES_FILE:-./volumes.yml}:/etc/gluster/volumes.yml:ro"
     healthcheck:
       test: ["CMD-SHELL", "gluster --mode=script volume list >/dev/null 2>&1"]
       interval: ${HC_INTERVAL:-10s}
