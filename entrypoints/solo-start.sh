@@ -17,6 +17,11 @@ set -e
 : "${DEBUG:=0}"
 if [ "${TRACE:-0}" = "1" ]; then set -x; fi
 
+# --- portable fallback logger (defined early) ---
+if ! command -v log >/dev/null 2>&1; then
+  log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+fi
+# ------------------------------------------------
 info()  { log "INFO: $*"; }
 warn()  { log "WARN: $*"; }
 error() { log "ERROR: $*"; }
