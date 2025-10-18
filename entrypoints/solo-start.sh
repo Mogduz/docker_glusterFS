@@ -191,65 +191,71 @@ pick_hostname() {
 
 # AWK-basierter YAML-Emitter (aus entrypoint.sh übernommen, leicht angepasst)
 # ---
-# Funktion: emit_yaml_specs() {()
-# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
-# ---
-emit_yaml_specs() {
+# Funktion: emit_yaml_specs() {
     file="$1"
     [ -s "$file" ] || return 1
     awk '
-        function ltrim(s){ sub(/^\s+/, "", s); return s }
-        function rtrim(s){ sub(/\s+$/, "", s); return s }
+        function ltrim(s){ sub(/^[ 	]+/,"",s); return s }
+        function rtrim(s){ sub(/[ 	]+$/,"",s); return s }
         function trim(s){ return rtrim(ltrim(s)) }
-        BEGIN{ in_vols=0; in_vol=0; sect=""; sect_indent=-1; }
-        /^[[:space:]]*#/ { next }    # skip comments
-        /^[[:space:]]*$/ { next }    # skip empty
-        /^volumes:[[:space:]]*$/ { in_vols=1; next }
-        {
-            line=$0
-            indent=match(line,/[^ ]/) - 1
-            gsub(/^[ ]+/, "", line)
-            if (in_vols==0) next
-
-            if (match(line, /^-[ ]+name:[ ]*(.*)$/, a)) {
-                if (in_vol==1) {
-                    print "__END_VOL__"
+        # remove inline comments not inside quotes
+        function strip_inline_comment(s,    i,c,in_s,in_d,out){
+            in_s=0; in_d=0; out=""
+            n=length(s)
+            for(i=1;i<=n;i++){
+                c=substr(s,i,1)
+                if(c=="\"" && !in_s){ in_d = !in_d; out=out c; continue }
+                if(c=="'"'"'" && !in_d){ in_s = !in_s; out=out c; continue }
+                if(c=="#" && !in_s && !in_d){
+                    break
                 }
+                out=out c
+            }
+            return rtrim(out)
+        }
+        BEGIN{ in_vols=0; in_vol=0; sect=""; sect_indent=-1; }
+        /^[ 	]*#/ { next }          # skip pure comments
+        /^[ 	]*$/ { next }          # skip empty
+        /^volumes:[ 	]*$/ { in_vols=1; next }
+        {
+            raw=$0
+            line=strip_inline_comment(raw)
+            if (line ~ /^[ 	]*$/) next
+
+            # track indent (spaces)
+            indent=match(line,/[^ ]/)-1; if (indent<0) indent=0
+
+            if(!in_vols) next
+
+            # new list item starts a new volume
+            if (match(line, /^[ 	]*-[ 	]+(.*)$/, a)) {
+                if (in_vol) print "__END_VOL__"
                 print "__BEGIN_VOL__"
-                print "VOLNAME=" a[1]
+                line = a[1]    # remainder after "- "
                 in_vol=1
+            }
+
+            if (!in_vol) next
+
+            # section headers
+            if (match(line, /^[ 	]*([A-Za-z0-9_.-]+)[ 	]*:[ 	]*$/, a)) {
+                sect=a[1]; sect_indent=indent; next
+            }
+
+            # key: value (possibly nested under a section)
+            if (match(line, /^[ 	]*([A-Za-z0-9_.-]+)[ 	]*:[ 	]*(.*)$/, a)) {
+                key=a[1]; val=trim(a[2])
+                gsub(/^"(.*)"$/, "\1", val)
+                gsub(/^'\''(.*)'\''$/, "\1", val)
+                if (sect!="" && indent>sect_indent) {
+                    print sect "." key "=" val
+                } else {
+                    print key "=" val
+                }
                 next
             }
-
-            if (in_vol==1) {
-                if (match(line, /^replica:[ ]*([0-9]+)/, a))  { print "REPLICA=" a[1]; next }
-                if (match(line, /^transport:[ ]*([a-zA-Z0-9_-]+)/, a)) { print "TRANSPORT=" a[1]; next }
-                if (match(line, /^auth_allow:[ ]*(.*)$/, a))   { print "AUTH_ALLOW=" a[1]; next }
-                if (match(line, /^nfs_disable:[ ]*(.*)$/, a))   { print "NFS_DISABLE=" a[1]; next }
-                if (match(line, /^options_reset:[ ]*(.*)$/, a)) { print "OPTIONS_RESET=" a[1]; next }
-                if (match(line, /^quota:[ ]*$/)) { sect="quota"; sect_indent=indent; next }
-                if (match(line, /^options:[ ]*$/)) { sect="options"; sect_indent=indent; next }
-
-                if (sect=="quota") {
-                    if (indent<=sect_indent) { sect=""; sect_indent=-1 }
-                    else {
-                        if (match(line, /^limit:[ ]*(.*)$/, a)) { print "YAML_QUOTA_LIMIT=" a[1]; next }
-                        if (match(line, /^soft_limit_pct:[ ]*([0-9]+)/, a)) { print "YAML_QUOTA_SOFT=" a[1]; next }
-                    }
-                }
-                if (sect=="options") {
-                    if (indent<=sect_indent) { sect=""; sect_indent=-1 }
-                    else {
-                        if (match(line, /^([a-zA-Z0-9._-]+):[ ]*(.*)$/, a)) {
-                            key=a[1]; val=a[2]
-                            print "VOL_OPT " key "=" val
-                            next
-                        }
-                    }
-                }
-            }
         }
-        END { if (in_vol==1) print "__END_VOL__" }
+        END{ if (in_vol) print "__END_VOL__" }
     ' "$file"
 }
 # ---
