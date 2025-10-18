@@ -9,6 +9,16 @@
 
 #!/usr/bin/env bash
 set -Eeo pipefail
+# --- Verbosity controls for solo-start ---
+: "${VERBOSE:=1}"
+: "${DEBUG:=0}"
+if [ "${TRACE:-0}" = "1" ]; then set -x; fi
+
+info()  { log "INFO: $*"; }
+warn()  { log "WARN: $*"; }
+error() { log "ERROR: $*"; }
+debug() { [ "$DEBUG" = "1" ] || [ "$VERBOSE" -ge 2 ] && log "DEBUG: $*"; :; }
+
 log \"=== solo-start: begin ===\"
 
 # >>> preflight variable checks (auto-inserted)
@@ -340,6 +350,10 @@ create_or_update_volume_from_spec() {
     done
 
     log "Erzeuge Volume: $VOLNAME (replica=$REPLICA transport=$TRANSPORT)"
+      log "  bricks:"
+      printf '    - %s
+' $bricks
+      log "  options: ${VOL_OPTS:-<none>}" 
     "$GLUSTER_BIN" volume create "$VOLNAME" replica "$REPLICA" transport "$TRANSPORT" $spec force >/dev/null 2>&1 \
       || fatal "Volume-Erstellung fehlgeschlagen: $VOLNAME"
 
@@ -470,6 +484,7 @@ for d in $BRICK_DIRS; do
   [ -d "$d" ] && [ -w "$d" ] || fatal "Brick-Verzeichnis fehlt oder ist nicht beschreibbar: $d"
 done
 
+describe_dir "$d"
 # Jetzt, NACH der erfolgreichen Verifikation, sind die Bricks garantiert vorhanden
 BRICKS_READY=true
 
