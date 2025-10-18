@@ -22,7 +22,7 @@ GLUSTER_BIN=${GLUSTER_BIN:-/usr/sbin/gluster}
 GLUSTERD_VOL=${GLUSTERD_VOL:-/etc/glusterfs/glusterd.vol}
 # ---
 # Funktion: 
-log() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -100,7 +100,7 @@ add_option_in_mgmt_block() {
 }
 # ---
 # Funktion: 
-ensure_glusterd_config() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -122,7 +122,7 @@ ensure_glusterd_config() {
 }
 # ---
 # Funktion: 
-wait_for_glusterd() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -139,7 +139,7 @@ wait_for_glusterd() {
 }
 # ---
 # Funktion: 
-pick_hostname() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -150,7 +150,7 @@ pick_hostname() {
 }
 # ---
 # Funktion: 
-discover_bricks() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -172,7 +172,7 @@ discover_bricks() {
 }
 # ---
 # Funktion: 
-ensure_replica_defaults_for_mode() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -193,7 +193,7 @@ ensure_replica_defaults_for_mode() {
 }
 # ---
 # Funktion: 
-bootstrap_all_volumes() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -208,7 +208,7 @@ bootstrap_all_volumes() {
     bricks="$(discover_bricks)"
     if [ -z "$bricks" ]; then
         if [ "$MODE" = "solo" ]; then
-            exec "/solo-start.sh"
+            exec "/usr/local/bin/solo-start.sh"
 
         else
             warn "No bricks discovered; cannot bootstrap volume"
@@ -255,7 +255,7 @@ bootstrap_all_volumes() {
 }
 # ---
 # Funktion: 
-peer_probe_and_wait() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -328,7 +328,7 @@ quota_size_for() {
 }
 # ---
 # Funktion: 
-apply_quota_for_volume() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -353,7 +353,7 @@ apply_quota_for_volume() {
 }
 # ---
 # Funktion: 
-bootstrap_all_volumes() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -451,7 +451,7 @@ emit_yaml_specs() {
 }
 # ---
 # Funktion: 
-apply_spec_line() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -480,7 +480,7 @@ apply_spec_line() {
 }
 # ---
 # Funktion: 
-bootstrap_from_yaml_or_env() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -592,11 +592,23 @@ reconcile_volume_settings() {
 }
 # ---
 # Funktion: 
-main() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
 main() {
+# Communicative startup banner
+log "=== GlusterFS container init ==="
+log "  MODE=$MODE  ADDRESS_FAMILY=$ADDRESS_FAMILY  PORTS=${DATA_PORT_START}-${DATA_PORT_END}"
+[ -n "${BIND_ADDR:-}" ] && log "  BIND_ADDR=$BIND_ADDR"
+[ -n "${PEERS:-}" ] && log "  PEERS=$PEERS"
+if [ -n "${VOLUMES_YAML:-}" ]; then
+    if [ -s "$VOLUMES_YAML" ]; then
+        log "  VOLUMES_YAML=$VOLUMES_YAML (present)"
+    else
+        log "  VOLUMES_YAML=$VOLUMES_YAML (missing/empty)"
+    fi
+fi
     log "MODE=$MODE"
     ensure_glusterd_config
 
