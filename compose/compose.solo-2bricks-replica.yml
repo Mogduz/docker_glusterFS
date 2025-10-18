@@ -10,7 +10,7 @@ services:
   gluster-solo:
     container_name: ${CONTAINER_NAME:-gluster-solo}
     build:
-      context: ../..
+      context: ..
       dockerfile: Dockerfile
     hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
     environment:
