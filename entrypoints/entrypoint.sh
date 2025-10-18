@@ -1,3 +1,12 @@
+# === [DOC] Autogenerierte Inline-Dokumentation: entrypoint.sh ===
+# Datei: entrypoints/entrypoint.sh
+# Typ: POSIX/Bash-Shellskript.
+# Zweck: Steuerung/Bootstrap/Start des Gluster-Dienstes bzw. Solo-Setups.
+# Wichtige Aspekte: Fehlerbehandlung (fatal/log), Umgebungsvariablen, Brick/Volume-Handling, YAML-Parsing.
+# Erkannte Funktionen: log, warn, die, is_true, add_option_in_mgmt_block, ensure_glusterd_config, wait_for_glusterd, pick_hostname, discover_bricks, ensure_replica_defaults_for_mode, bootstrap_all_volumes, peer_probe_and_wait, forward_signals, term, quota_size_for, apply_quota_for_volume, bootstrap_all_volumes, emit_yaml_specs, apply_spec_line, bootstrap_from_yaml_or_env …
+# Sicherheitsaspekte: Skript bricht bei Fehlern ab, prüft Pfade/Rechte, loggt diagnostische Infos.
+# === [DOC-END] ===
+
 #!/bin/sh
 # GlusterFS server entrypoint (POSIX sh) with MODE support: brick|host|solo
 
@@ -11,12 +20,29 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 GLUSTERD_BIN=${GLUSTERD_BIN:-/usr/sbin/glusterd}
 GLUSTER_BIN=${GLUSTER_BIN:-/usr/sbin/gluster}
 GLUSTERD_VOL=${GLUSTERD_VOL:-/etc/glusterfs/glusterd.vol}
+# ---
+# Funktion: 
+log() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+# ---
+# Funktion: warn() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 warn() { log "WARN: $*"; }
+# ---
+# Funktion: die() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 die() { log "ERROR: $*"; exit 1; }
 
 # normalize boolean-ish env vars (1|y|yes|true|on)
+# ---
+# Funktion:     is_true() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
     is_true() {
       case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
         1|y|yes|true|on) return 0 ;;
@@ -51,6 +77,10 @@ GLUSTERD_READY_TIMEOUT=${GLUSTERD_READY_TIMEOUT:-120}
 PEER_WAIT_TIMEOUT=${PEER_WAIT_TIMEOUT:-180}
 
 # ---------- Helpers ----------
+# ---
+# Funktion: add_option_in_mgmt_block() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 add_option_in_mgmt_block() {
     # Usage: add_option_in_mgmt_block "key" "value"
     key="$1"; val="$2"
@@ -68,6 +98,11 @@ add_option_in_mgmt_block() {
         {print}
     ' "$GLUSTERD_VOL" > "$GLUSTERD_VOL.tmp" && mv "$GLUSTERD_VOL.tmp" "$GLUSTERD_VOL"
 }
+# ---
+# Funktion: 
+ensure_glusterd_config() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 ensure_glusterd_config() {
     log "Configuring glusterd.vol options"
@@ -85,6 +120,11 @@ ensure_glusterd_config() {
         add_option_in_mgmt_block "rpc-auth-allow-insecure" "on"
     fi
 }
+# ---
+# Funktion: 
+wait_for_glusterd() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 wait_for_glusterd() {
     i=0
@@ -97,12 +137,22 @@ wait_for_glusterd() {
     done
     log "glusterd is ready"
 }
+# ---
+# Funktion: 
+pick_hostname() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 pick_hostname() {
     hn="$(hostname -f 2>/dev/null || true)"
     [ -n "$hn" ] || hn="$(hostname 2>/dev/null || echo gluster)"
     printf '%s' "$hn"
 }
+# ---
+# Funktion: 
+discover_bricks() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 discover_bricks() {
     if [ -n "$BRICK_DIRS" ]; then
@@ -120,6 +170,11 @@ discover_bricks() {
         done
     fi
 }
+# ---
+# Funktion: 
+ensure_replica_defaults_for_mode() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 ensure_replica_defaults_for_mode() {
     case "$MODE" in
@@ -136,6 +191,11 @@ ensure_replica_defaults_for_mode() {
             ;;
     esac
 }
+# ---
+# Funktion: 
+bootstrap_all_volumes() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 bootstrap_all_volumes() {
     is_true "$VOL_BOOTSTRAP" || { log "VOL_BOOTSTRAP=false -> skipping"; return 0; }
@@ -193,6 +253,11 @@ bootstrap_all_volumes() {
     "$GLUSTER_BIN" volume start "$VOLNAME" force || die "Failed to start volume $VOLNAME"
     log "Volume $VOLNAME created and started"
 }
+# ---
+# Funktion: 
+peer_probe_and_wait() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 peer_probe_and_wait() {
     [ -n "$PEERS" ] || { log "No PEERS specified; skipping peer probe"; return 0; }
@@ -223,8 +288,16 @@ peer_probe_and_wait() {
         sleep 2
     done
 }
+# ---
+# Funktion: forward_signals() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 forward_signals() {
     pid="$1"
+# ---
+# Funktion:     term() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
     term() {
         log "Forwarding SIGTERM to glusterd (pid $pid)"
         kill -TERM "$pid" 2>/dev/null || true
@@ -235,6 +308,10 @@ forward_signals() {
 }
 
 # Return quota size for a given volume from QUOTA_LIMITS (format: vol=size[,vol2=size2])
+# ---
+# Funktion: quota_size_for() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 quota_size_for() {
     vol="$1"
     IFS=, ; set -- $QUOTA_LIMITS ; unset IFS
@@ -249,6 +326,11 @@ quota_size_for() {
     done
     return 1
 }
+# ---
+# Funktion: 
+apply_quota_for_volume() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 apply_quota_for_volume() {
     vol="$1"
@@ -269,6 +351,11 @@ apply_quota_for_volume() {
     fi
     log "Quota configured on $vol"
 }
+# ---
+# Funktion: 
+bootstrap_all_volumes() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 bootstrap_all_volumes() {
     # Iterate volumes in VOLUMES (comma-separated), preserving original VOLNAME default
@@ -299,6 +386,10 @@ bootstrap_all_volumes() {
 #       limit: 200G
 #       soft_limit_pct: 80
 #
+# ---
+# Funktion: emit_yaml_specs() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 emit_yaml_specs() {
     file="$1"
     [ -s "$file" ] || return 1
@@ -358,6 +449,11 @@ emit_yaml_specs() {
         }
     ' "$file"
 }
+# ---
+# Funktion: 
+apply_spec_line() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 apply_spec_line() {
     # Accept known keys, map to envs used by bootstrap logic
@@ -382,6 +478,11 @@ apply_spec_line() {
             ;;
     esac
 }
+# ---
+# Funktion: 
+bootstrap_from_yaml_or_env() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 bootstrap_from_yaml_or_env() {
     if [ -s "$VOLUMES_YAML" ]; then
@@ -425,6 +526,10 @@ bootstrap_from_yaml_or_env() {
 }
 
 # Apply options/auth/quota to an existing or just-created volume according to current YAML vars
+# ---
+# Funktion: reconcile_volume_settings() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 reconcile_volume_settings() {
     vol="$1"
     # Options (VOL_OPTS is comma-separated key=value list)
@@ -485,6 +590,11 @@ reconcile_volume_settings() {
         esac
     fi
 }
+# ---
+# Funktion: 
+main() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 main() {
     log "MODE=$MODE"
