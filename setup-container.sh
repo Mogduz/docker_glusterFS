@@ -42,9 +42,18 @@ ok()    { echo "✔ $*"; }
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 PROJECT_DIR="${SCRIPT_DIR}"
 
+# Compose-Dateien strikt im Unterordner 'compose' suchen
+mapfile -t COMPOSE_FILES < <(
+  find "$PROJECT_DIR/compose" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | sort
+)
+
+
 # --- Compose-Dateien ermitteln ------------------------------------------------
 mapfile -t COMPOSE_FILES < <(
-  find "$PROJECT_DIR" -maxdepth 1 -type f         \( -name 'compose*.yml' -o -name 'compose*.yaml'            -o -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' \)         | sort
+  {
+    [ -d "$PROJECT_DIR/compose" ] && find "$PROJECT_DIR/compose" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \);
+    find "$PROJECT_DIR" -maxdepth 1 -type f \( -name 'compose*.yml' -o -name 'compose*.yaml' -o -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' \);
+  } 2>/dev/null | sort
 )
 
 (( ${#COMPOSE_FILES[@]} > 0 )) || abort "Keine Compose-Dateien im Projektordner gefunden."
@@ -86,12 +95,12 @@ compose_base="${compose_filename%.*}"   # ohne .yml/.yaml
 
 # Primärpfade laut Vorgabe:
 ENV_EXAMPLE_PRIMARY="${PROJECT_DIR}/examples/env/${compose_base}.env.example"
-VOL_EXAMPLE_PRIMARY="${PROJECT_DIR}/example/volumes/volume.full.yml.example"
+VOL_EXAMPLE_PRIMARY="${PROJECT_DIR}/examples/volume/volume.full.yml.example"
 
 # Fallbacks (ältere/alternative Repo-Strukturen):
-ENV_EXAMPLE_FALLBACK1="${PROJECT_DIR}/env_examples/${compose_base}.env.example"
+ENV_EXAMPLE_FALLBACK1="${PROJECT_DIR}/examples/env/${compose_base}.env"
 ENV_EXAMPLE_FALLBACK2="${PROJECT_DIR}/examples/env/${compose_base}.env"
-VOL_EXAMPLE_FALLBACK1="${PROJECT_DIR}/examples/volumes/volume.full.yml.example"
+VOL_EXAMPLE_FALLBACK1="${PROJECT_DIR}/examples/volume/volumes.yml.example"
 VOL_EXAMPLE_FALLBACK2="${PROJECT_DIR}/volume_examples/volume.full-example.yml"
 
 ENV_SRC=""
