@@ -9,7 +9,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Documented ports (publish via compose/run)
-EXPOSE 24007 24008 49152-60999
+EXPOSE 24007 24008 49152-49251
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
