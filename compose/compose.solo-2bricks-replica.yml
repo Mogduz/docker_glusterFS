@@ -15,7 +15,7 @@ services:
     network_mode: host
     hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
     env_file:
-      - ../examples/env/compose.solo-2bricks-replica.env.example
+      - .env
     environment:
       MODE: ${MODE:-solo}
       ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
