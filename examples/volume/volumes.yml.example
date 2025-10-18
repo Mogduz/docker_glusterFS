@@ -1,3 +1,10 @@
+# === [DOC] Autogenerierte Inline-Dokumentation: volumes.yml.example ===
+# Datei: examples/volume/volumes.yml.example
+# Typ: YAML (Compose/Volumes/Beispiele).
+# Zweck: Deklarative Konfiguration (Container-Stack, Volume-Spezifikationen).
+# Hinweis: Kommentare erläutern Felder, sinnvolle Defaults und Sicherheitsüberlegungen.
+# === [DOC-END] ===
+
 # Gluster volumes specification (read by entrypoint.sh)
 volumes:
   - name: gv0
