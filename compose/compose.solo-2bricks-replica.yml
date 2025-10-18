@@ -14,16 +14,22 @@ services:
       dockerfile: Dockerfile
     network_mode: host
     hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
+    env_file:
+      - ../examples/env/compose.solo-2bricks-replica.env.example
     environment:
       MODE: ${MODE:-solo}
       ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
       DATA_PORT_START: ${DATA_PORT_START:-49152}
       DATA_PORT_END: ${DATA_PORT_END:-49251}
-      VOL_BOOTSTRAP: true
+      VOL_BOOTSTRAP: ${VOL_BOOTSTRAP:-true}
       VOLUMES_YAML: /etc/gluster/volumes.yml
       PRIVATE_IP: ${PRIVATE_IP:-}
       MGMT_PORT1: ${MGMT_PORT1:-24007}
       MGMT_PORT2: ${MGMT_PORT2:-24008}
+    volumes:
+      - ${VOLUMES_FILE:-./volumes.yml}:/etc/gluster/volumes.yml:ro
+      - ${BRICK1_MAPPING}
+      - ${BRICK2_MAPPING}
     healthcheck:
       test:
       - CMD-SHELL
