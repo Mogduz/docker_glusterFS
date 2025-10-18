@@ -577,66 +577,71 @@ bootstrap_all_volumes() {
 #       soft_limit_pct: 80
 #
 # ---
-# Funktion: emit_yaml_specs() {()
-# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
-# ---
-emit_yaml_specs() {
+# Funktion: emit_yaml_specs() {
     file="$1"
     [ -s "$file" ] || return 1
     awk '
-        function ltrim(s){ sub(/^\s+/, "", s); return s }
-        function rtrim(s){ sub(/\s+$/, "", s); return s }
+        function ltrim(s){ sub(/^[ 	]+/,"",s); return s }
+        function rtrim(s){ sub(/[ 	]+$/,"",s); return s }
         function trim(s){ return rtrim(ltrim(s)) }
-        BEGIN{ in_vols=0; in_vol=0; sect=""; sect_indent=-1; }
-        /^[[:space:]]*#/ { next }    # skip comments
-        /^[[:space:]]*$/ { next }    # skip empty
-        /^volumes:[[:space:]]*$/ { in_vols=1; next }
-        {
-            line=$0
-            indent=match(line,/[^ ]/) - 1
-            gsub(/^[ ]+/, "", line)
-            if (in_vols && substr(line,1,1)=="-") {
-                # start of new volume item
-                if (in_vol) {
-                    print "__END_VOL__"
+        # remove inline comments not inside quotes
+        function strip_inline_comment(s,    i,c,in_s,in_d,out){
+            in_s=0; in_d=0; out=""
+            n=length(s)
+            for(i=1;i<=n;i++){
+                c=substr(s,i,1)
+                if(c=="\"" && !in_s){ in_d = !in_d; out=out c; continue }
+                if(c=="'"'"'" && !in_d){ in_s = !in_s; out=out c; continue }
+                if(c=="#" && !in_s && !in_d){
+                    break
                 }
-                in_vol=1
-                sect=""; sect_indent=-1
-                print "__BEGIN_VOL__"
-                rest=trim(substr(line,2))
-                if (rest ~ /name:[[:space:]]*/) {
-                    val=rest; sub(/^name:[[:space:]]*/,"",val)
-                    gsub(/^["'''"]|["'''"]$/,"",val)
-                    print "name=" val
-                }
-                next
+                out=out c
             }
+            return rtrim(out)
+        }
+        BEGIN{ in_vols=0; in_vol=0; sect=""; sect_indent=-1; }
+        /^[ 	]*#/ { next }          # skip pure comments
+        /^[ 	]*$/ { next }          # skip empty
+        /^volumes:[ 	]*$/ { in_vols=1; next }
+        {
+            raw=$0
+            line=strip_inline_comment(raw)
+            if (line ~ /^[ 	]*$/) next
+
+            # track indent (spaces)
+            indent=match(line,/[^ ]/)-1; if (indent<0) indent=0
+
+            if(!in_vols) next
+
+            # new list item starts a new volume
+            if (match(line, /^[ 	]*-[ 	]+(.*)$/, a)) {
+                if (in_vol) print "__END_VOL__"
+                print "__BEGIN_VOL__"
+                line = a[1]    # remainder after "- "
+                in_vol=1
+            }
+
             if (!in_vol) next
 
-            # key: value or key:
-            split(line, kv, ":")
-            key=trim(kv[1])
-            val=""
-            if (index(line,":")>0) { val=trim(substr(line, index(line,":")+1)) }
+            # section headers
+            if (match(line, /^[ 	]*([A-Za-z0-9_.-]+)[ 	]*:[ 	]*$/, a)) {
+                sect=a[1]; sect_indent=indent; next
+            }
 
-            if (val=="") {
-                # section start
-                sect=key
-                sect_indent=indent
-                next
-            } else {
-                # scalar or nested kv
-                gsub(/^["'''"]|["'''"]$/,"",val)
+            # key: value (possibly nested under a section)
+            if (match(line, /^[ 	]*([A-Za-z0-9_.-]+)[ 	]*:[ 	]*(.*)$/, a)) {
+                key=a[1]; val=trim(a[2])
+                gsub(/^"(.*)"$/, "\1", val)
+                gsub(/^'\''(.*)'\''$/, "\1", val)
                 if (sect!="" && indent>sect_indent) {
                     print sect "." key "=" val
                 } else {
                     print key "=" val
                 }
+                next
             }
         }
-        END{
-            if (in_vol) print "__END_VOL__"
-        }
+        END{ if (in_vol) print "__END_VOL__" }
     ' "$file"
 }
 # ---
@@ -648,9 +653,15 @@ emit_yaml_specs() {
 apply_spec_line() {
     # Accept known keys, map to envs used by bootstrap logic
     k="$1"; v="$2"
+    # trim surrounding spaces
+    v="$(printf "%s" "$v" | sed -e "s/^[[:space:]]*//" -e "s/[[:space:]]*$//")"
     case "$k" in
         name) VOLNAME="$v" ;;
-        replica) REPLICA="$v" ;;
+        replica)
+            # extract first integer token
+            v="$(printf "%s" "$v" | awk "{for(i=1;i<=NF;i++) if (\$i ~ /^[0-9]+$/){print \$i; exit}}")"
+            REPLICA="$v"
+            ;;
         transport) TRANSPORT="$v" ;;
         auth_allow) AUTH_ALLOW="$v" ;;
         nfs_disable) NFS_DISABLE="$(printf "%s" "$v" | tr A-Z a-z | sed -e s/true/1/ -e s/false/0/)" ;;
@@ -661,7 +672,9 @@ apply_spec_line() {
             if [ -z "${VOL_OPTS:-}" ]; then VOL_OPTS="${opt}=${v}"; else VOL_OPTS="${VOL_OPTS},${opt}=${v}"; fi
             ;;
         options_reset)
-            YAML_RESET_OPTS="$v"
+            # comma or space separated keys
+            _list="$(printf "%s" "$v" | tr ',' ' ')"
+            OPTIONS_RESET="$OPTIONS_RESET $_list"
             ;;
         *)
             warn "Unknown key in YAML: $k (ignored)"
