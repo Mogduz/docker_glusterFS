@@ -1,15 +1,33 @@
+# === [DOC] Autogenerierte Inline-Dokumentation: solo-start.sh ===
+# Datei: entrypoints/solo-start.sh
+# Typ: POSIX/Bash-Shellskript.
+# Zweck: Steuerung/Bootstrap/Start des Gluster-Dienstes bzw. Solo-Setups.
+# Wichtige Aspekte: Fehlerbehandlung (fatal/log), Umgebungsvariablen, Brick/Volume-Handling, YAML-Parsing.
+# Erkannte Funktionen: log, fatal, require_vars, wait_glusterd, is_true, pick_hostname, emit_yaml_specs, volume_exists, volume_status_started, ensure_volume_started, apply_options_and_quota, check_hard_changes, create_or_update_volume_from_spec, log_volume_info, process_volumes_yaml
+# Sicherheitsaspekte: Skript bricht bei Fehlern ab, prüft Pfade/Rechte, loggt diagnostische Infos.
+# === [DOC-END] ===
+
 #!/usr/bin/env bash
 set -Eeo pipefail
 
 # >>> preflight variable checks (auto-inserted)
 # Provide a local log() if not already defined by the caller (entrypoint.sh)
 if ! command -v log >/dev/null 2>&1; then
+# ---
+# Funktion:   log() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
   log() { printf '%s %s
 ' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 fi
 
 # Log file for startup diagnostics
 LOG_FILE="${LOG_FILE:-/var/log/gluster-entrypoint.log}"
+# ---
+# Funktion: 
+fatal() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 fatal() {
   msg="$*"
@@ -18,6 +36,11 @@ fatal() {
 ' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$msg" | tee -a "$LOG_FILE" >&2
   exit 1
 }
+# ---
+# Funktion: 
+require_vars() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 require_vars() {
   missing=""
@@ -68,6 +91,10 @@ fi
 VOLUMES_YAML="${VOLUMES_YAML:-${VOLUMES_FILE:-/etc/glusterfs/volumes.yml}}"
 
 # Warten bis glusterd bereit ist
+# ---
+# Funktion: wait_glusterd() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 wait_glusterd() {
   i=0; max=60
   until "$GLUSTER_BIN" --mode=script volume list >/dev/null 2>&1; do
@@ -79,6 +106,11 @@ wait_glusterd() {
   done
   log "glusterd ist bereit"
 }
+# ---
+# Funktion: 
+is_true() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 is_true() {
   case "${1:-}" in
@@ -86,6 +118,11 @@ is_true() {
     *) return 1 ;;
   esac
 }
+# ---
+# Funktion: 
+pick_hostname() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 pick_hostname() {
   if [ -n "${PRIVATE_IP:-}" ]; then
@@ -96,6 +133,10 @@ pick_hostname() {
 }
 
 # AWK-basierter YAML-Emitter (aus entrypoint.sh übernommen, leicht angepasst)
+# ---
+# Funktion: emit_yaml_specs() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 emit_yaml_specs() {
     file="$1"
     [ -s "$file" ] || return 1
@@ -154,14 +195,28 @@ emit_yaml_specs() {
         END { if (in_vol==1) print "__END_VOL__" }
     ' "$file"
 }
+# ---
+# Funktion: 
+volume_exists() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 volume_exists() {
   "$GLUSTER_BIN" --mode=script volume info "$1" >/dev/null 2>&1
 }
+# ---
+# Funktion: 
+volume_status_started() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 volume_status_started() {
   "$GLUSTER_BIN" --mode=script volume info "$1" 2>/dev/null | awk -F': ' '/^Status:/ {print $2}' | grep -qi '^Started$'
 }
+# ---
+# Funktion: ensure_volume_started() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 ensure_volume_started() {
   vol="$1"
   if volume_status_started "$vol"; then
@@ -182,6 +237,11 @@ ensure_volume_started() {
     fi
   fi
 }
+# ---
+# Funktion: 
+apply_options_and_quota() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 apply_options_and_quota() {
   vol="$1"
@@ -235,6 +295,10 @@ apply_options_and_quota() {
 }
 
 # Abgleich „harte“ Änderungen: replica/transport/bricks werden nur geprüft und geloggt
+# ---
+# Funktion: check_hard_changes() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 check_hard_changes() {
   vol="$1"
   changes=0
@@ -252,6 +316,11 @@ check_hard_changes() {
   fi
   return $changes
 }
+# ---
+# Funktion: 
+create_or_update_volume_from_spec() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 create_or_update_volume_from_spec() {
   # Erwartet: VOLNAME, REPLICA, TRANSPORT, AUTH_ALLOW, NFS_DISABLE, VOL_OPTS, OPTIONS_RESET, YAML_QUOTA_LIMIT, YAML_QUOTA_SOFT
@@ -282,6 +351,11 @@ create_or_update_volume_from_spec() {
     ensure_volume_started "$VOLNAME"
   fi
 }
+# ---
+# Funktion: 
+log_volume_info() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 log_volume_info() {
   vol="$1"
@@ -307,6 +381,11 @@ log_volume_info() {
     printf '%s INFO: ----- Volume Info END: %s -----\n' "$ts" "$vol"
   } >> "${LOG_FILE:-/var/log/gluster-entrypoint.log}" 2>/dev/null || true
 }
+# ---
+# Funktion: 
+process_volumes_yaml() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 process_volumes_yaml() {
   [ -r "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' nicht lesbar"
