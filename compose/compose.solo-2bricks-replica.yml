@@ -10,7 +10,7 @@ services:
   gluster-solo:
     container_name: ${CONTAINER_NAME:-gluster-solo}
     build:
-      context: ..
+      context: ../..
       dockerfile: Dockerfile
     network_mode: host
     hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
@@ -24,6 +24,7 @@ services:
       PRIVATE_IP: ${PRIVATE_IP:-}
       MGMT_PORT1: ${MGMT_PORT1:-24007}
       MGMT_PORT2: ${MGMT_PORT2:-24008}
+    healthcheck:
       test:
       - CMD-SHELL
       - gluster --mode=script volume list >/dev/null 2>&1
