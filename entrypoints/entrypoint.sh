@@ -489,6 +489,64 @@ apply_quota_for_volume() {
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
+# ---
+# Create or ensure a single Gluster volume named $VOLNAME using discovered bricks.
+# Uses REPLICA (default set elsewhere) and TRANSPORT (default tcp). Idempotent.
+bootstrap_volume() {
+    # Skip if already exists
+    if "$GLUSTER_BIN" --mode=script volume info "$VOLNAME" >/dev/null 2>&1; then
+        log "Volume $VOLNAME already exists"
+        return 0
+    fi
+
+    host="$(pick_hostname)"
+    bricks="$(discover_bricks)"
+    if [ -z "$bricks" ]; then
+        if [ "${MODE:-}" = "solo" ]; then
+            # Delegate to solo-start if present to handle single-node sensible defaults
+            exec "/usr/local/bin/solo-start.sh"
+        else
+            warn "No bricks discovered; cannot bootstrap volume $VOLNAME"
+            return 0
+        fi
+    fi
+
+    # Ensure sane defaults
+    REPLICA="${REPLICA:-1}"
+    TRANSPORT="${TRANSPORT:-tcp}"
+
+    # Build brick endpoints "<host>:<dir>"
+    set -- $bricks
+    endpoints=""
+    for d in "$@"; do
+        [ -n "$d" ] || continue
+        if [ -z "$endpoints" ]; then
+            endpoints="${host}:${d}"
+        else
+            endpoints="${endpoints} ${host}:${d}"
+        fi
+    done
+
+    # Compose create arguments
+    create_args=""
+    if [ "$REPLICA" -gt 1 ]; then
+        create_args="replica ${REPLICA} transport ${TRANSPORT} ${endpoints}"
+    else
+        create_args="transport ${TRANSPORT} ${endpoints}"
+    fi
+
+    log "Creating volume $VOLNAME (${create_args})"
+    if ! "$GLUSTER_BIN" volume create "$VOLNAME" $create_args force; then
+        warn "Failed to create volume $VOLNAME"
+        return 1
+    fi
+
+    # Start the volume; non-fatal if already started
+    "$GLUSTER_BIN" volume start "$VOLNAME" >/dev/null 2>&1 || warn "Failed to start $VOLNAME (maybe already started)"
+    return 0
+}
+# ---
+
 bootstrap_all_volumes() {
     # Iterate volumes in VOLUMES (comma-separated), preserving original VOLNAME default
     orig_vol="${VOLNAME:-}"
