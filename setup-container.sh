@@ -1,3 +1,12 @@
+# === [DOC] Autogenerierte Inline-Dokumentation: setup-container.sh ===
+# Datei: setup-container.sh
+# Typ: POSIX/Bash-Shellskript.
+# Zweck: Steuerung/Bootstrap/Start des Gluster-Dienstes bzw. Solo-Setups.
+# Wichtige Aspekte: Fehlerbehandlung (fatal/log), Umgebungsvariablen, Brick/Volume-Handling, YAML-Parsing.
+# Erkannte Funktionen: abort, info, ok
+# Sicherheitsaspekte: Skript bricht bei Fehlern ab, prüft Pfade/Rechte, loggt diagnostische Infos.
+# === [DOC-END] ===
+
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -13,9 +22,22 @@ set -Eeuo pipefail
 #
 # Annahme: Skript wird im Projekt-Root ausgeführt (dort, wo auch die Compose-Datei liegt).
 # ------------------------------------------------------------------------------
+# ---
+# Funktion: 
+abort() {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 
 abort() { echo "ERROR: $*" >&2; exit 1; }
+# ---
+# Funktion: info()  {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 info()  { echo "• $*"; }
+# ---
+# Funktion: ok()    {()
+# Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
+# ---
 ok()    { echo "✔ $*"; }
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
