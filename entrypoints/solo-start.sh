@@ -9,6 +9,7 @@
 
 #!/usr/bin/env bash
 set -Eeo pipefail
+log \"=== solo-start: begin ===\"
 
 # >>> preflight variable checks (auto-inserted)
 # Provide a local log() if not already defined by the caller (entrypoint.sh)
@@ -25,7 +26,7 @@ fi
 LOG_FILE="${LOG_FILE:-/var/log/gluster-entrypoint.log}"
 # ---
 # Funktion: 
-fatal() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -38,7 +39,7 @@ fatal() {
 }
 # ---
 # Funktion: 
-require_vars() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -108,7 +109,7 @@ wait_glusterd() {
 }
 # ---
 # Funktion: 
-is_true() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -120,7 +121,7 @@ is_true() {
 }
 # ---
 # Funktion: 
-pick_hostname() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -197,7 +198,7 @@ emit_yaml_specs() {
 }
 # ---
 # Funktion: 
-volume_exists() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -206,7 +207,7 @@ volume_exists() {
 }
 # ---
 # Funktion: 
-volume_status_started() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -239,7 +240,7 @@ ensure_volume_started() {
 }
 # ---
 # Funktion: 
-apply_options_and_quota() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -318,7 +319,7 @@ check_hard_changes() {
 }
 # ---
 # Funktion: 
-create_or_update_volume_from_spec() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -353,7 +354,7 @@ create_or_update_volume_from_spec() {
 }
 # ---
 # Funktion: 
-log_volume_info() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
@@ -383,7 +384,7 @@ log_volume_info() {
 }
 # ---
 # Funktion: 
-process_volumes_yaml() {()
+
 # Beschreibung: Siehe Inline-Kommentare; verarbeitet Teilaspekte des Startups/Bootstraps.
 # ---
 
