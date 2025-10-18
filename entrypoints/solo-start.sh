@@ -65,14 +65,63 @@ fi
 # This script expects the same environment variables that entrypoint.sh provides.
 
 # shellcheck disable=SC2154
-            : "${REPLICA:=2}"
-            log "No bricks discovered; creating $REPLICA default bricks under /bricks"
-            bricks=""
-            i=1
-            while [ "$i" -le "$REPLICA" ]; do
-                d="/bricks/brick${i}"
-                mkdir -p "$d"
-                bricks="$bricks $d"
-                i=$((i+1))
-            done
-            bricks="$(printf '%s\n' $bricks)"
+# --- Brick-Ermittlung & -Anlage ----------------------------------------------
+# Unterstützte Eingabe:
+#   - BRICKS=" /path/one /path/two ..."   (durch Leerzeichen getrennt)
+#   - Falls BRICKS leer: Default-Pfade /bricks/brick{1..REPLICA}
+#
+# Ergebnis:
+#   - BRICK_DIRS : Liste der Ziel-Verzeichnisse (newline-separiert)
+#   - BRICKS_CREATED=true|false : ob mindestens ein Brick angelegt wurde
+#   - BRICKS_READY=true|false   : wird NUR gesetzt, wenn alle Bricks vorhanden & beschreibbar sind
+#   - VOL_BOOTSTRAP=true        : wird gesetzt, wenn neue Bricks angelegt wurden
+# -----------------------------------------------------------------------------
+BRICKS_CREATED=false
+BRICKS_READY=false
+
+# Quellen bestimmen
+if [ -n "${BRICKS:-}" ]; then
+  log "Explizite BRICKS erkannt: $BRICKS"
+  _brick_targets="$BRICKS"
+else
+  : "${REPLICA:=2}"
+  log "Keine expliziten BRICKS; verwende Default für REPLICA=$REPLICA unter /bricks"
+  _brick_targets=""
+  i=1
+  while [ "$i" -le "$REPLICA" ]; do
+    _brick_targets="$_brick_targets /bricks/brick${i}"
+    i=$((i+1))
+  done
+fi
+
+# Normalisieren in newline-Liste
+BRICK_DIRS="$(printf '%s\n' $_brick_targets)"
+
+# Prüfen/Erstellen (Pass 1): fehlende Bricks anlegen
+for d in $BRICK_DIRS; do
+  if [ -d "$d" ]; then
+    [ -w "$d" ] || fatal "Brick-Verzeichnis existiert, ist aber nicht beschreibbar: $d"
+    log "Brick vorhanden: $d"
+  else
+    log "Brick fehlt; lege an: $d"
+    mkdir -p "$d" || fatal "Kann Brick-Verzeichnis nicht anlegen: $d"
+    BRICKS_CREATED=true
+  fi
+done
+
+# Prüfen (Pass 2): Nach Anlage sicherstellen, dass ALLE Bricks existieren & beschreibbar sind
+for d in $BRICK_DIRS; do
+  [ -d "$d" ] && [ -w "$d" ] || fatal "Brick-Verzeichnis fehlt oder ist nicht beschreibbar: $d"
+done
+
+# Jetzt, NACH der erfolgreichen Verifikation, sind die Bricks garantiert vorhanden
+BRICKS_READY=true
+
+# Bool für Volume-Init/Startup: Wenn neue Bricks erzeugt wurden, Bootstrap signalisieren
+if [ "${BRICKS_CREATED}" = "true" ]; then
+  VOL_BOOTSTRAP=true
+  log "Neue Bricks angelegt → VOL_BOOTSTRAP=true"
+fi
+
+export BRICK_DIRS BRICKS_CREATED BRICKS_READY VOL_BOOTSTRAP
+# --- Ende Brick-Ermittlung ---------------------------------------------------- ----------------------------------------------------
