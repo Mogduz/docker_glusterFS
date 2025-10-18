@@ -78,9 +78,9 @@ require_vars() {
 # Für 'solo' sind keine zwingend – wir prüfen aber konsistente Optionen.
 if [ -n "${VOLUMES_YAML:-}" ]; then
   require_vars VOLUMES_YAML
-  [ -r "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar."
-  [ -s "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' ist leer."
-  log "VOLUMES_YAML erkannt: $VOLUMES_YAML"
+  [ -r "$VOLUMES_YAML" ] || { warn "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar – fahre mit Defaults fort."; VOLUMES_YAML=""; }
+[ -s "$VOLUMES_YAML" ] || { warn "VOLUMES_YAML='$VOLUMES_YAML' ist leer – fahre mit Defaults fort."; VOLUMES_YAML=""; }
+log "VOLUMES_YAML erkannt: $VOLUMES_YAML"
 fi
 
 # Validierung: REPLICA muss eine positive Ganzzahl sein, falls gesetzt
@@ -107,7 +107,7 @@ fi
 # Quelle festlegen: VOLUMES_YAML bevorzugt, sonst VOLUMES_FILE, sonst /etc/glusterfs/volumes.yml
 : "${GLUSTER_BIN:=/usr/sbin/gluster}"
 : "${GLUSTERD_BIN:=/usr/sbin/glusterd}"
-VOLUMES_YAML="${VOLUMES_YAML:-${VOLUMES_FILE:-/etc/glusterfs/volumes.yml}}"
+VOLUMES_YAML="${VOLUMES_YAML:-${VOLUMES_FILE:-}}"
 
 # Warten bis glusterd bereit ist
 # ---
@@ -411,8 +411,8 @@ log_volume_info() {
 # ---
 
 process_volumes_yaml() {
-  [ -r "$VOLUMES_YAML" ] || fatal "VOLUMES_YAML='$VOLUMES_YAML' nicht lesbar"
-  log "Lese YAML-Spezifikation: $VOLUMES_YAML"
+  [ -r "$VOLUMES_YAML" ] || { warn "VOLUMES_YAML='$VOLUMES_YAML' ist nicht lesbar – fahre mit Defaults fort."; VOLUMES_YAML=""; }
+log "Lese YAML-Spezifikation: $VOLUMES_YAML"
   # Sammle Optionen für jedes Volume
   VOL_OPTS=""
   emit_yaml_specs "$VOLUMES_YAML" | while IFS= read -r line; do
