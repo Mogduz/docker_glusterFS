@@ -1,3 +1,10 @@
+# === [DOC] Autogenerierte Inline-Dokumentation: compose.solo-2bricks-replica.yml ===
+# Datei: compose/compose.solo-2bricks-replica.yml
+# Typ: YAML (Compose/Volumes/Beispiele).
+# Zweck: Deklarative Konfiguration (Container-Stack, Volume-Spezifikationen).
+# Hinweis: Kommentare erläutern Felder, sinnvolle Defaults und Sicherheitsüberlegungen.
+# === [DOC-END] ===
+
 version: '3.9'
 services:
   gluster-solo:
