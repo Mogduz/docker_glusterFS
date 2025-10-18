@@ -162,14 +162,24 @@ volume_exists() {
 volume_status_started() {
   "$GLUSTER_BIN" --mode=script volume info "$1" 2>/dev/null | awk -F': ' '/^Status:/ {print $2}' | grep -qi '^Started$'
 }
-
 ensure_volume_started() {
   vol="$1"
   if volume_status_started "$vol"; then
     log "Volume $vol ist bereits gestartet"
+    log_volume_info "$vol"
   else
     log "Starte Volume $vol"
     "$GLUSTER_BIN" volume start "$vol" force >/dev/null 2>&1 || fatal "Konnte Volume $vol nicht starten"
+    # kurze Wartezeit, dann erneut prüfen
+    sleep 1
+    if volume_status_started "$vol"; then
+      log "Volume $vol erfolgreich gestartet"
+      log_volume_info "$vol"
+    else
+      # letzte Info zur Diagnose
+      log_volume_info "$vol"
+      fatal "Volume $vol ließ sich nicht in den Status 'Started' bringen"
+    fi
   fi
 }
 
@@ -271,6 +281,31 @@ create_or_update_volume_from_spec() {
     apply_options_and_quota "$VOLNAME"
     ensure_volume_started "$VOLNAME"
   fi
+}
+
+log_volume_info() {
+  vol="$1"
+  info="$("$GLUSTER_BIN" --mode=script volume info "$vol" 2>/dev/null)" || { warn "Konnte volume info für $vol nicht abrufen"; return 1; }
+
+  # Keyfelder extrahieren
+  status="$(printf '%s\n' "$info" | awk -F': ' '/^Status:/ {print $2; exit}')"
+  bricks_count="$(printf '%s\n' "$info" | awk -F': ' '/^Number of Bricks:/ {print $2; exit}' | awk '{print $1}')"
+  transport="$(printf '%s\n' "$info" | awk -F': ' '/^Transport-type:/ {print $2; exit}' | tr -d '[:space:]')"
+
+  # Kurzinfo in normale Logs
+  log "Volume-Info: name=$vol status=${status:-unknown} bricks=${bricks_count:-?} transport=${transport:-?}"
+
+  # Vollständige Info in die Log-Datei kippen, mit Zeitstempel pro Zeile
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  {
+    printf '%s INFO: ----- Volume Info BEGIN: %s -----\n' "$ts" "$vol"
+    printf '%s INFO: %s\n' "$ts" "$(echo "$info" | head -n1)"
+    # Prefix jede Zeile
+    printf '%s\n' "$info" | while IFS= read -r ln; do
+      printf '%s INFO: %s\n' "$ts" "$ln"
+    done
+    printf '%s INFO: ----- Volume Info END: %s -----\n' "$ts" "$vol"
+  } >> "${LOG_FILE:-/var/log/gluster-entrypoint.log}" 2>/dev/null || true
 }
 
 process_volumes_yaml() {
