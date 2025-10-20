@@ -580,69 +580,25 @@ bootstrap_all_volumes() {
 emit_yaml_specs() {
     file="$1"
     [ -s "$file" ] || return 1
-    awk '
-        function ltrim(s){ sub(/^[ 	]+/,"",s); return s }
-        function rtrim(s){ sub(/[ 	]+$/,"",s); return s }
-        function trim(s){ return rtrim(ltrim(s)) }
-        # remove inline comments not inside quotes
-        function strip_inline_comment(s,    i,c,in_s,in_d,out){
-            in_s=0; in_d=0; out=""
-            n=length(s)
-            for(i=1;i<=n;i++){
-                c=substr(s,i,1)
-                if(c=="\"" && !in_s){ in_d = !in_d; out=out c; continue }
-                if(c=="'"'"'" && !in_d){ in_s = !in_s; out=out c; continue }
-                if(c=="#" && !in_s && !in_d){
-                    break
-                }
-                out=out c
-            }
-            return rtrim(out)
-        }
-        BEGIN{ in_vols=0; in_vol=0; sect=""; sect_indent=-1; }
-        /^[ 	]*#/ { next }          # skip pure comments
-        /^[ 	]*$/ { next }          # skip empty
-        /^volumes:[ 	]*$/ { in_vols=1; next }
-        {
-            raw=$0
-            line=strip_inline_comment(raw)
-            if (line ~ /^[ 	]*$/) next
-
-            # track indent (spaces)
-            indent=match(line,/[^ ]/)-1; if (indent<0) indent=0
-
-            if(!in_vols) next
-
-            # new list item starts a new volume
-            if (match(line, /^[ 	]*-[ 	]+(.*)$/, a)) {
-                if (in_vol) print "__END_VOL__"
-                print "__BEGIN_VOL__"
-                line = a[1]    # remainder after "- "
-                in_vol=1
-            }
-
-            if (!in_vol) next
-
-            # section headers
-            if (match(line, /^[ 	]*([A-Za-z0-9_.-]+)[ 	]*:[ 	]*$/, a)) {
-                sect=a[1]; sect_indent=indent; next
-            }
-
-            # key: value (possibly nested under a section)
-            if (match(line, /^[ 	]*([A-Za-z0-9_.-]+)[ 	]*:[ 	]*(.*)$/, a)) {
-                key=a[1]; val=trim(a[2])
-                gsub(/^"(.*)"$/, "\1", val)
-                gsub(/^'\''(.*)'\''$/, "\1", val)
-                if (sect!="" && indent>sect_indent) {
-                    print sect "." key "=" val
-                } else {
-                    print key "=" val
-                }
-                next
-            }
-        }
-        END{ if (in_vol) print "__END_VOL__" }
-    ' "$file"
+    if command -v yq >/dev/null 2>&1; then
+        yq -r '
+          .volumes[] as $v |
+          "__BEGIN_VOL__",
+          "VOLNAME=\($v.name)",
+          ( $v.replica            | select(. != null) | "REPLICA=\(.)" ),
+          ( $v.transport          | select(. != null) | "TRANSPORT=\(.)" ),
+          ( $v.auth_allow         | select(. != null) | "AUTH_ALLOW=\(.)" ),
+          ( $v.nfs_disable        | select(. != null) | "NFS_DISABLE=\(.)" ),
+          ( $v.options            // {} | to_entries[]? | "VOL_OPT \(.key)=\(.value)" ),
+          ( $v.options_reset      // [] | if type=="array" then "OPTIONS_RESET=\(join(\" \"))" else "OPTIONS_RESET=\(.)" end | select(. != "OPTIONS_RESET=") ),
+          ( $v.quota.limit        | select(. != null) | "YAML_QUOTA_LIMIT=\(.)" ),
+          ( $v.quota.soft_limit_pct | select(. != null) | "YAML_QUOTA_SOFT=\(.)" ),
+          "__END_VOL__"
+        ' "$file" | sed '/^null$/d'
+    else
+        echo "WARN: yq not found; emit_yaml_specs fallback not available." >&2
+        return 2
+    fi
 }
 # ---
 # Funktion: 
