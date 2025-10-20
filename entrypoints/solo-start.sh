@@ -185,17 +185,7 @@ pick_hostname() {
   if [ -n "${PRIVATE_IP:-}" ]; then
     printf '%s\n' "$PRIVATE_IP"
   else
-    hostname -i 2>/dev/null | awk '{print $1}'
-  fi
-}
-
-# AWK-basierter YAML-Emitter (aus entrypoint.sh übernommen, leicht angepasst)
-# ---
-# Funktion: emit_yaml_specs() {
-    file="$1"
-    [ -s "$file" ] || return 1
-    awk -f - "$file" <<'AWK'
-\
+    hostname -i 2>/dev/null | awk -f - "$file" <<'AWK'
         function ltrim(s){ sub(/^[ \t]+/,"",s); return s }
         function rtrim(s){ sub(/[ \t]+$/,"",s); return s }
         function trim(s){ return rtrim(ltrim(s)) }
@@ -216,35 +206,31 @@ pick_hostname() {
         }
 
         BEGIN{ in_vols=0; in_vol=0; sect=""; sect_indent=-1; }
-        /^[ \t]*#/ { next }          # skip pure comments
-        /^[ \t]*$/ { next }          # skip empty
+        /^[ \t]*#/ { next }
+        /^[ \t]*$/ { next }
         /^volumes:[ \t]*$/ { in_vols=1; next }
         {
             raw=$0
             line=strip_inline_comment(raw)
             if (line ~ /^[ \t]*$/) next
 
-            # track indent (spaces)
             indent=match(line,/[^ ]/)-1; if (indent<0) indent=0
 
             if(!in_vols) next
 
-            # new list item starts a new volume
             if (match(line, /^[ \t]*-[ \t]+(.*)$/, a)) {
                 if (in_vol) print "__END_VOL__"
                 print "__BEGIN_VOL__"
-                line = a[1]    # remainder after "- "
+                line = a[1]
                 in_vol=1
             }
 
             if (!in_vol) next
 
-            # section headers
             if (match(line, /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*:[ \t]*$/, a)) {
                 sect=a[1]; sect_indent=indent; next
             }
 
-            # key: value (possibly nested under a section)
             if (match(line, /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*:[ \t]*(.*)$/, a)) {
                 key=a[1]; val=trim(a[2])
                 gsub(/^"(.*)"$/, "\\1", val)
