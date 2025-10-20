@@ -186,64 +186,41 @@ pick_hostname() {
     printf '%s\n' "$PRIVATE_IP"
   else
     hostname -i 2>/dev/null | awk -f - "$file" <<'AWK'
-        function ltrim(s){ sub(/^[ \t]+/,"",s); return s }
-        function rtrim(s){ sub(/[ \t]+$/,"",s); return s }
-        function trim(s){ return rtrim(ltrim(s)) }
-        # remove inline comments not inside quotes
-        function strip_inline_comment(s){
-            in_s=0; in_d=0; out=""
-            n=length(s)
-            for(i=1;i<=n;i++){
-                c=substr(s,i,1)
-                if(c=="\"" && !in_s){ in_d = !in_d; out=out c; continue }
-                if(c=="'" && !in_d){ in_s = !in_s; out=out c; continue }
-                if(c=="#" && !in_s && !in_d){
-                    break
-                }
-                out=out c
-            }
-            return out
-        }
-
-        BEGIN{ in_vols=0; in_vol=0; sect=""; sect_indent=-1; }
-        /^[ \t]*#/ { next }
-        /^[ \t]*$/ { next }
-        /^volumes:[ \t]*$/ { in_vols=1; next }
-        {
-            raw=$0
-            line=strip_inline_comment(raw)
-            if (line ~ /^[ \t]*$/) next
-
-            indent=match(line,/[^ ]/)-1; if (indent<0) indent=0
-
-            if(!in_vols) next
-
-            if (match(line, /^[ \t]*-[ \t]+(.*)$/, a)) {
-                if (in_vol) print "__END_VOL__"
-                print "__BEGIN_VOL__"
-                line = a[1]
-                in_vol=1
-            }
-
-            if (!in_vol) next
-
-            if (match(line, /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*:[ \t]*$/, a)) {
-                sect=a[1]; sect_indent=indent; next
-            }
-
-            if (match(line, /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*:[ \t]*(.*)$/, a)) {
-                key=a[1]; val=trim(a[2])
-                gsub(/^"(.*)"$/, "\\1", val)
-                gsub(/^'(.*)'$/, "\\1", val)
-                if (sect!="" && indent>sect_indent) {
-                    print sect "." key "=" val
-                } else {
-                    print key "=" val
-                }
-                next
-            }
-        }
-        END{ if (in_vol) print "__END_VOL__" }
+BEGIN {
+  in_vols=0; in_vol=0; sect=""; sect_indent=-1
+}
+/^[ \t]*#/ { next }
+/^[ \t]*$/ { next }
+/^volumes:[ \t]*$/ { in_vols=1; next }
+{
+  raw=$0
+  line=raw
+  indent = match(line,/[^ ]/) - 1; if (indent<0) indent=0
+  if (!in_vols) next
+  if (match(line, /^[ \t]*-[ \t]+(.*)$/, a)) {
+    if (in_vol) print "__END_VOL__"
+    print "__BEGIN_VOL__"
+    line = a[1]
+    in_vol=1
+  }
+  if (!in_vol) next
+  if (match(line, /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*:[ \t]*$/, a)) {
+    sect=a[1]; sect_indent=indent; next
+  }
+  if (match(line, /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*:[ \t]*(.*)$/, a)) {
+    key=a[1]; val=a[2]
+    sub(/^[ \t]+/,"",val); sub(/[ \t]+$/,"",val)
+    if (match(val, /^"(.*)"$/, b)) { val=b[1] }
+    else if (match(val, /^'(.*)'$/, b)) { val=b[1] }
+    if (sect!="" && indent>sect_indent) {
+      print sect "." key "=" val
+    } else {
+      print key "=" val
+    }
+    next
+  }
+}
+END { if (in_vol) print "__END_VOL__" }
 AWK
 }
 # ---
