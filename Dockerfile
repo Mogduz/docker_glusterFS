@@ -1,4 +1,3 @@
-# Base image pulled from a Docker Hub mirror to avoid 503 auth outages; override with --build-arg BASE_IMAGE=debian:12-slim if needed.
 # === [DOC] Autogenerierte Inline-Dokumentation: Dockerfile ===
 # Datei: Dockerfile
 # Typ: Dockerfile zum Build des GlusterFS-Server-Images.
@@ -11,6 +10,7 @@
 # ENTRYPOINT: ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
 # Hinweis: Kommentare beschreiben Build-Schritte, Pfade und Berechtigungen.
 # === [DOC-END] ===
+# Base image pulled from a Docker Hub mirror to avoid 503 auth outages; override with --build-arg BASE_IMAGE=debian:12-slim if needed.
 
 # GlusterFS Server – minimal, server-only
 ARG BASE_IMAGE=mirror.gcr.io/library/debian:12-slim
