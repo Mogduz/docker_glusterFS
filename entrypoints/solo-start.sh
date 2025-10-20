@@ -199,7 +199,7 @@ pick_hostname() {
         function rtrim(s){ sub(/[ 	]+$/,"",s); return s }
         function trim(s){ return rtrim(ltrim(s)) }
         # remove inline comments not inside quotes
-        function strip_inline_comment(s,    i,c,in_s,in_d,out){
+        function strip_inline_comment(s){
             in_s=0; in_d=0; out=""
             n=length(s)
             for(i=1;i<=n;i++){
