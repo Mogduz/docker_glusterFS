@@ -1,3 +1,4 @@
+# Base image pulled from a Docker Hub mirror to avoid 503 auth outages; override with --build-arg BASE_IMAGE=debian:12-slim if needed.
 # === [DOC] Autogenerierte Inline-Dokumentation: Dockerfile ===
 # Datei: Dockerfile
 # Typ: Dockerfile zum Build des GlusterFS-Server-Images.
@@ -12,8 +13,8 @@
 # === [DOC-END] ===
 
 # GlusterFS Server – minimal, server-only
-FROM debian:12-slim
-
+ARG BASE_IMAGE=mirror.gcr.io/library/debian:12-slim
+FROM ${BASE_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
