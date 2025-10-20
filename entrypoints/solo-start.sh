@@ -194,7 +194,7 @@ pick_hostname() {
 # Funktion: emit_yaml_specs() {
     file="$1"
     [ -s "$file" ] || return 1
-    awk '
+    awk -f - "$file" <<'AWK'
         function ltrim(s){ sub(/^[ 	]+/,"",s); return s }
         function rtrim(s){ sub(/[ 	]+$/,"",s); return s }
         function trim(s){ return rtrim(ltrim(s)) }
@@ -256,7 +256,7 @@ pick_hostname() {
             }
         }
         END{ if (in_vol) print "__END_VOL__" }
-    ' "$file"
+AWK
 }
 # ---
 # Funktion: 
