@@ -189,35 +189,61 @@ pick_hostname() {
 BEGIN {
   in_vols=0; in_vol=0; sect=""; sect_indent=-1
 }
-/^[ \t]*#/ { next }
-/^[ \t]*$/ { next }
-/^volumes:[ \t]*$/ { in_vols=1; next }
+/^[ ]*#/ { next }
+/^[ ]*$/ { next }
+/^volumes:[ ]*$/ { in_vols=1; next }
 {
-  raw=$0
-  line=raw
-  indent = match(line,/[^ ]/) - 1; if (indent<0) indent=0
+  line=$0
+  # compute indent as leading spaces
+  indent=0
+  while (substr(line, indent+1, 1)==" ") indent++
+
   if (!in_vols) next
-  if (match(line, /^[ \t]*-[ \t]+(.*)$/, a)) {
+
+  # handle list items:
+  if (line ~ /^[ ]*-[ ]+/) {
+    # if we're inside a section (e.g., bricks:) at deeper indent, it's NOT a new volume -> ignore
+    if (in_vol && sect!="" && indent>sect_indent) {
+      next
+    }
+    # otherwise: new volume item
     if (in_vol) print "__END_VOL__"
     print "__BEGIN_VOL__"
-    line = a[1]
+    sub(/^[ ]*-[ ]+/, "", line)
     in_vol=1
   }
+
   if (!in_vol) next
-  if (match(line, /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*:[ \t]*$/, a)) {
-    sect=a[1]; sect_indent=indent; next
-  }
-  if (match(line, /^[ \t]*([A-Za-z0-9_.-]+)[ \t]*:[ \t]*(.*)$/, a)) {
-    key=a[1]; val=a[2]
-    sub(/^[ \t]+/,"",val); sub(/[ \t]+$/,"",val)
-    if (match(val, /^"(.*)"$/, b)) { val=b[1] }
-    else if (match(val, /^'(.*)'$/, b)) { val=b[1] }
-    if (sect!="" && indent>sect_indent) {
-      print sect "." key "=" val
-    } else {
-      print key "=" val
-    }
+
+  # section header "key:"
+  if (line ~ /^[ ]*[A-Za-z0-9_.-]+[ ]*:[ ]*$/) {
+    c=index(line, ":")
+    key=line
+    if (c>0) key=substr(line,1,c-1)
+    gsub(/[ ]+$/,"",key)
+    gsub(/^[ ]+/,"",key)
+    sect=key
+    sect_indent=indent
     next
+  }
+
+  # key: value
+  if (line ~ /^[ ]*[A-Za-z0-9_.-]+[ ]*:[ ]*./) {
+    c=index(line, ":")
+    if (c>0) {
+      key=substr(line,1,c-1)
+      val=substr(line,c+1)
+      gsub(/[ ]+$/,"",key); gsub(/^[ ]+/,"",key)
+      gsub(/^[ ]+/,"",val); gsub(/[ ]+$/,"",val)
+      if (val ~ /^".*"$/) { val=substr(val,2,length(val)-2) }
+      else if (val ~ /^'.*'$/) { val=substr(val,2,length(val)-2) }
+      if (sect!="" && indent>sect_indent) {
+        print sect "." key "=" val
+      } else {
+        print key "=" val
+      }
+      next
+    }
   }
 }
 END { if (in_vol) print "__END_VOL__" }
