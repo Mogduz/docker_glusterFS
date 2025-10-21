@@ -27,9 +27,8 @@ RUN apt-get update && \
 EXPOSE 24007 24008 49152-49251
 
 COPY entrypoints/*.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/*.sh /usr/local/bin/*.py
 RUN chmod +x /usr/local/bin/*.py
-COPY entrypoints/*.py /usr/local/bin/
-RUN chmod +x /usr/local/bin/*.sh
 
 # Run glusterd in foreground (-N) under tini for proper signal handling
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
