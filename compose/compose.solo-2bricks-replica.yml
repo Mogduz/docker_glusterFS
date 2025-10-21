@@ -15,7 +15,7 @@ services:
     env_file:
       - .env
     environment:
-      MODE: ${MODE:-solo}
+      MODE: solo
       ADDRESS_FAMILY: ${ADDRESS_FAMILY:-inet}
       DATA_PORT_START: ${DATA_PORT_START:-49152}
       DATA_PORT_END: ${DATA_PORT_END:-49251}
@@ -24,7 +24,11 @@ services:
       PRIVATE_IP: ${PRIVATE_IP:-}
       MGMT_PORT1: ${MGMT_PORT1:-24007}
       MGMT_PORT2: ${MGMT_PORT2:-24008}
+      BRICK_HOST: ${BRICK_HOST:-127.0.0.1}
+      BRICKS: "/bricks/brick1 /bricks/brick2"
     volumes:
+      - ${HOST_BRICK1:?set in .env}:/bricks/brick1
+      - ${HOST_BRICK2:?set in .env}:/bricks/brick2
       - ${VOLUMES_FILE:-./volumes.yml}:/etc/gluster/volumes.yml:ro
       - ${BRICK1_MAPPING}
       - ${BRICK2_MAPPING}
