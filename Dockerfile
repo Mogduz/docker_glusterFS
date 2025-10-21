@@ -17,10 +17,11 @@ ARG BASE_IMAGE=mirror.gcr.io/library/debian:12-slim
 FROM ${BASE_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \ python3 \ python3-yaml \
-      glusterfs-server tini ca-certificates yq \
- && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-yaml \
+        glusterfs-server tini ca-certificates yq && \
+    rm -rf /var/lib/apt/lists/*
 
 # Documented ports (publish via compose/run)
 EXPOSE 24007 24008 49152-49251
