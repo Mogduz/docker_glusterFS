@@ -88,61 +88,6 @@ def ensure_dirs(dirs):
         except Exception as e: die(f"Konnte Verzeichnis nicht anlegen: {d} ({e})")
         if not os.access(d, os.W_OK): die(f"Brick-Verzeichnis nicht beschreibbar: {d}")
 
-
-def preflight_xattr(path: Path):
-    """
-    Kurzer Selbsttest: Können wir trusted.*-xattrs am Brick setzen?
-    Liefert im Fehlerfall einen klaren Hinweis (CAP_SYS_ADMIN / FS).
-    """
-    probe = (path / ".gluster-xattr-probe")
-    try:
-        probe.touch(exist_ok=True)
-        # Versuch 1: Python-API (vermeidet Abhängigkeit von setfattr)
-        try:
-            os.setxattr(str(probe), "trusted.test", b"1")
-        except AttributeError:
-            # Fallback: setfattr CLI
-            run(f"setfattr -n trusted.test -v 1 {shlex.quote(str(probe))}", check=True)
-        except PermissionError:
-            die(f"Extended Attributes (trusted.*) nicht setzbar auf {path}. "
-                f"Ursache: fehlende Capability (CAP_SYS_ADMIN) oder ungeeignetes Dateisystem. "
-                f"Maßnahme: 'cap_add: [SYS_ADMIN]' in Compose ergänzen und sicherstellen, dass {path} auf ext4/xfs (kein NFS/CIFS/Overlay) liegt.")
-        # Clean up attribute best effort
-        try:
-            os.removexattr(str(probe), "trusted.test")
-        except Exception:
-            pass
-    except SystemExit:
-        # run(...) hat bereits geloggt; eskaliere mit klarer Botschaft
-        die(f"Extended Attributes (trusted.*) nicht setzbar auf {path}. "
-            f"Prüfe: cap_add: [SYS_ADMIN] in Compose und dass {path} auf ext4/xfs (kein NFS/CIFS/Overlay) liegt.")
-    finally:
-        try:
-            probe.unlink()
-        except Exception:
-            pass
-
-
-def _print_indented_output(res):
-    out = (res.stdout or "").strip()
-    err = (res.stderr or "").strip()
-    if out:
-        for line in out.splitlines():
-            print(f"[solo]   {line}", flush=True)
-    if err and res.returncode != 0:
-        for line in err.splitlines():
-            print(f"[solo]   (stderr) {line}", flush=True)
-
-def volume_report(name: str):
-    """Gibt am Stück eine kompakte Übersicht für das Volume aus (Info/Status/Quota)."""
-    log(f"==== VOLUME REPORT: {name} ====")
-    log("  [info]")
-    _print_indented_output(run(f"gluster --mode=script volume info {shlex.quote(name)}", check=False))
-    log("  [status]")
-    _print_indented_output(run(f"gluster --mode=script volume status {shlex.quote(name)}", check=False))
-    log("  [quota list]")
-    _print_indented_output(run(f"gluster volume quota {shlex.quote(name)} list", check=False))
-    log(f"==== END REPORT: {name} ====")
 def volume_exists(name: str) -> bool:
     res = run(f"gluster --mode=script volume info {shlex.quote(name)}", check=False)
     return res.returncode == 0 and f"Volume Name: {name}" in (res.stdout or "")
@@ -216,20 +161,8 @@ def main():
         ensure_dirs(brick_roots)
         volume_bricks = [ (p / name).resolve() for p in brick_roots ]
         ensure_dirs(volume_bricks)
-        # Preflight: ensure we can set trusted.* xattrs on the brick filesystem
-        preflight_xattr(volume_bricks[0].parent)
         if not volume_exists(name): gluster_create(name, replica, transport, volume_bricks)
         reconcile_from_yaml(name, vol)
-        # --- Zusammenfassung am Ende: Info/Status/Quota des/der Volumes ---
-        try:
-            for _vol in vols:
-                try:
-                    volume_report(str(_vol.get("name")))
-                except Exception as e:
-                    log(f"Report-Fehler für Volume '{_vol.get('name', '?')}': {e}")
-        except Exception as e:
-            log(f"Report-Block übersprungen: {e}")
-
     log("Solo-Startup erfolgreich (idempotent).")
 
 if __name__ == "__main__": main()
