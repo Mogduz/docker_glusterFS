@@ -19,8 +19,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3 python3-yaml \
-        glusterfs-server tini ca-certificates yq && \
+        glusterfs-server tini ca-certificates yq \
+        python3 python3-yaml && \
     rm -rf /var/lib/apt/lists/*
 
 # Documented ports (publish via compose/run)
@@ -28,9 +28,7 @@ EXPOSE 24007 24008 49152-49251
 
 COPY entrypoints/*.sh /usr/local/bin/
 COPY entrypoints/*.py /usr/local/bin/
-RUN set -eux; \
-    chmod +x /usr/local/bin/*.sh; \
-    chmod +x /usr/local/bin/*.py
+RUN chmod +x /usr/local/bin/*.sh /usr/local/bin/*.py
 
 # Run glusterd in foreground (-N) under tini for proper signal handling
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
