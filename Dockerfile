@@ -18,7 +18,7 @@ FROM ${BASE_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends \
+ && apt-get install -y --no-install-recommends \ python3 \ python3-yaml \
       glusterfs-server tini ca-certificates yq \
  && rm -rf /var/lib/apt/lists/*
 
@@ -26,6 +26,8 @@ RUN apt-get update \
 EXPOSE 24007 24008 49152-49251
 
 COPY entrypoints/*.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/*.py
+COPY entrypoints/*.py /usr/local/bin/
 RUN chmod +x /usr/local/bin/*.sh
 
 # Run glusterd in foreground (-N) under tini for proper signal handling
