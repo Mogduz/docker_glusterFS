@@ -23,6 +23,23 @@ DEF_FALLBACKS = [
     "/etc/glusterfs/volumes.yaml",
 ]
 
+
+def detect_brick_host():
+    """Choose a host/IP for brick specs (Gluster requires <host>:<abs-path>).
+    Priority: $BRICK_HOST > $BIND_ADDR > hostname -f > hostname > 'localhost'.
+    """
+    for key in ("BRICK_HOST", "BIND_ADDR"):
+        v = os.environ.get(key, "").strip()
+        if v:
+            return v
+    try:
+        res = run("hostname -f", check=False)
+        if res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+    res = run("hostname", check=False)
+    return (res.stdout or "").strip() or "localhost"
 def log(*a): 
     print("[solo]", *a, flush=True)
 
@@ -95,9 +112,25 @@ def volume_status_started(name: str) -> bool:
     return res.returncode == 0 and "Status of volume" in (res.stdout or "")
 
 def gluster_create(name: str, replica: int, transport: str, bricks):
-    brick_args = " ".join(shlex.quote(str(p)) for p in bricks)
+    host = detect_brick_host()
+    brick_specs = [f"{host}:{str(p)}" for p in bricks]
+    log(f"Brick host for volume '{name}': {host}")
+    log("Bricks:", ", ".join(brick_specs))
+    brick_args = " ".join(shlex.quote(b) for b in brick_specs)
     cmd = f"gluster volume create {shlex.quote(name)} replica {int(replica)} transport {transport} {brick_args} force"
-    run(cmd)
+    try:
+        run(cmd)
+    except SystemExit as e:
+        # Enrich common error diagnostics
+        # Re-run without --mode=script info to collect context
+        hint = []
+        hint.append("Fehlschlag beim Erstellen des Volumes.")
+        hint.append(f"Verwendete Brick-Spezifikationen: {', '.join(brick_specs)}")
+        hint.append("Hinweise:")
+        hint.append("  - Gluster erwartet das Format <HOST>:<ABSOLUTER_PFAD> pro Brick.")
+        hint.append("  - Host sollte der von glusterd bekannte Name/IP sein (siehe 'gluster peer status').")
+        hint.append("  - Setze ggf. BRICK_HOST oder BIND_ADDR um den Host zu erzwingen.")
+        die("\n".join(hint), code=e.code if isinstance(e.code, int) else 1)
 
 def gluster_start(name: str):
     run(f"gluster volume start {shlex.quote(name)}", check=False)
@@ -118,7 +151,7 @@ def apply_spec(vol):
     ensure_dirs(brick_roots)
 
     # Volumen-spezifische Brick-Pfade
-    volume_bricks = [p / name for p in brick_roots]
+    volume_bricks = [ (p / name).resolve() for p in brick_roots ]
     ensure_dirs(volume_bricks)
 
     # Erstellen, falls nicht vorhanden
@@ -161,6 +194,9 @@ def apply_spec(vol):
         gluster_start(name)
 
 def main():
+    # Preflight diagnostics
+    host = detect_brick_host()
+    log(f"Detected brick host: {host}")
     path = find_yaml()
     if not path:
         log("Keine volumes.yml gefunden – nichts zu tun.")
