@@ -36,7 +36,6 @@ volumes:
     # Alternative: auf Default zurücksetzen -> auth_allow: ""
 
     # NFS-Server für dieses Volume deaktivieren (empfohlen):
-    nfs_disable: true
 
     # Gluster 'volume set' Optionen (Beispiele; nach Bedarf erweitern/ändern)
 
