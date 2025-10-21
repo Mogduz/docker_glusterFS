@@ -55,4 +55,4 @@ volumes:
     # Quota-Konfiguration (optional)
     quota:
       limit: 200G            # "off" | "disable" | "0" -> Quota deaktivieren
-      soft_limit_pct: 80     # optional, z.B. 80 (%)
+      soft_limit_pct: 80     # optional; akzeptiert 80 oder '80%' (wirkt via 'quota default-soft-limit')
