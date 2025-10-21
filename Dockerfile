@@ -1,32 +1,22 @@
-# === [DOC] Autogenerierte Inline-Dokumentation: Dockerfile ===
-# Datei: Dockerfile
-# Typ: Dockerfile zum Build des GlusterFS-Server-Images.
-# Basis-Image: debian:12-slim
-# Exponierte Ports: 24007 24008 49152-49251
-# Kopierte Dateien/Verzeichnisse:
-#   - entrypoints/entrypoint.sh /usr/local/bin/entrypoint.sh
-#   - entrypoints/*.sh /usr/local/bin/
-#   - *.sh /
-# ENTRYPOINT: ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
-# Hinweis: Kommentare beschreiben Build-Schritte, Pfade und Berechtigungen.
-# === [DOC-END] ===
-# Base image pulled from a Docker Hub mirror to avoid 503 auth outages; override with --build-arg BASE_IMAGE=debian:12-slim if needed.
+# Minimal Beispiel-Dockerfile für GlusterFS + hybriden Entrypoint
+FROM debian:bookworm-slim
 
-# GlusterFS Server – minimal, server-only
-ARG BASE_IMAGE=mirror.gcr.io/library/debian:12-slim
-FROM ${BASE_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \        glusterfs-server \        python3 python3-venv python3-pip \        tini bash ca-certificates \        && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      glusterfs-server tini ca-certificates yq \
- && rm -rf /var/lib/apt/lists/*
+# Python deps
+RUN pip3 install --no-cache-dir pyyaml
 
-# Documented ports (publish via compose/run)
+# Verzeichnisse
+RUN mkdir -p /etc/gluster /var/lib/glusterd /bricks /entrypoints
+
+# Skripte
+COPY entrypoints/ /entrypoints/
+RUN chmod +x /entrypoints/entrypoint.hybrid.sh /entrypoints/solo-startup.py
+
+# Exponierte Ports (GlusterD + Brick-Ports)
 EXPOSE 24007 24008 49152-49251
 
-COPY entrypoints/*.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/*.sh
-
-# Run glusterd in foreground (-N) under tini for proper signal handling
-ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
+# Tini als PID1, Bash-Entrypoint kümmert sich um Glusterd und Solo-Startup
+ENTRYPOINT ["/usr/bin/tini","-g","--","/entrypoints/entrypoint.hybrid.sh"]
+CMD ["glusterd","-N"]
