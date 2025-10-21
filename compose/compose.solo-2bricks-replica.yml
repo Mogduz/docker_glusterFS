@@ -12,6 +12,8 @@ services:
       dockerfile: Dockerfile
     network_mode: host
     hostname: ${HOSTNAME_GLUSTER:-gluster-solo}
+    cap_add:
+      - SYS_ADMIN
     env_file:
       - .env
     environment:
