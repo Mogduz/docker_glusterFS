@@ -122,9 +122,6 @@ def reconcile_from_yaml(name: str, vol: dict):
         aa = vol["auth_allow"]
         if aa in ("", None): gluster_reset_option(name, "auth.allow")
         else: gluster_set_option(name, "auth.allow", str(aa))
-    if "nfs_disable" in vol:
-        val = "on" if bool(vol["nfs_disable"]) else "off"
-        gluster_set_option(name, "nfs.disable", val)
     opts = vol.get("options") or {}
     if isinstance(opts, dict):
         for k, v in opts.items(): gluster_set_option(name, str(k), str(v))
