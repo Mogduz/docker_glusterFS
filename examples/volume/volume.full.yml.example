@@ -12,13 +12,7 @@
 #   name               (Pflicht)        — Name des Gluster-Volumes
 #   replica            (optional)       — Replika-Faktor (integer). Änderung an bestehenden Volumes erfordert manuelle Migration.
 #   transport          (optional)       — Transporttyp, i.d.R. 'tcp'
-#   auth_allow         (optional)       — Komma-separierte Liste von CIDRs/IPs/Hostnames oder "*" für alle
-#                                         Leerstring "" -> setzt auth.allow zurück (Reset)
-#   nfs_disable        (optional,bool)  — true|false  -> wird zu nfs.disable on/off
 #   options            (optional,map)   — Beliebige 'gluster volume set' Optionen als key: value
-#   options_reset      (optional,CSV)   — Liste von Options-Namen, die mit 'gluster volume reset' zurückgesetzt werden
-#   quota.limit        (optional)       — z.B. 200G, 1T; "off"/"disable"/"0" deaktiviert quota
-#   quota.soft_limit_pct (optional,int) — z.B. 80 (setzt features.soft-limit auf 80%)
 #
 # Hinweise:
 # - Brick-Zuordnung wird über Compose/.env erledigt. Der Entrypoint erzeugt pro Volume automatisch Unterordner brickX/<VOLNAME>.
@@ -30,10 +24,6 @@ volumes:
   - name: gv0
     replica: 2               # optional (Standard im Solo-Modus)
     transport: tcp           # optional
-
-    # Zugriffskontrolle:
-
-    # NFS-Server für dieses Volume deaktivieren (empfohlen):
 
     # Gluster 'volume set' Optionen (Beispiele; nach Bedarf erweitern/ändern)
 
