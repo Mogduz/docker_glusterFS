@@ -122,6 +122,27 @@ def preflight_xattr(path: Path):
         except Exception:
             pass
 
+
+def _print_indented_output(res):
+    out = (res.stdout or "").strip()
+    err = (res.stderr or "").strip()
+    if out:
+        for line in out.splitlines():
+            print(f"[solo]   {line}", flush=True)
+    if err and res.returncode != 0:
+        for line in err.splitlines():
+            print(f"[solo]   (stderr) {line}", flush=True)
+
+def volume_report(name: str):
+    """Gibt am Stück eine kompakte Übersicht für das Volume aus (Info/Status/Quota)."""
+    log(f"==== VOLUME REPORT: {name} ====")
+    log("  [info]")
+    _print_indented_output(run(f"gluster --mode=script volume info {shlex.quote(name)}", check=False))
+    log("  [status]")
+    _print_indented_output(run(f"gluster --mode=script volume status {shlex.quote(name)}", check=False))
+    log("  [quota list]")
+    _print_indented_output(run(f"gluster volume quota {shlex.quote(name)} list", check=False))
+    log(f"==== END REPORT: {name} ====")
 def volume_exists(name: str) -> bool:
     res = run(f"gluster --mode=script volume info {shlex.quote(name)}", check=False)
     return res.returncode == 0 and f"Volume Name: {name}" in (res.stdout or "")
@@ -199,6 +220,16 @@ def main():
         preflight_xattr(volume_bricks[0].parent)
         if not volume_exists(name): gluster_create(name, replica, transport, volume_bricks)
         reconcile_from_yaml(name, vol)
+        # --- Zusammenfassung am Ende: Info/Status/Quota des/der Volumes ---
+        try:
+            for _vol in vols:
+                try:
+                    volume_report(str(_vol.get("name")))
+                except Exception as e:
+                    log(f"Report-Fehler für Volume '{_vol.get('name', '?')}': {e}")
+        except Exception as e:
+            log(f"Report-Block übersprungen: {e}")
+
     log("Solo-Startup erfolgreich (idempotent).")
 
 if __name__ == "__main__": main()
