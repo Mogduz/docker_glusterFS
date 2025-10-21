@@ -118,10 +118,7 @@ def gluster_reset_option(name: str, key: str):
 
 def reconcile_from_yaml(name: str, vol: dict):
     if not volume_running(name): gluster_start(name)
-    if "auth_allow" in vol:
-        aa = vol["auth_allow"]
-        if aa in ("", None): gluster_reset_option(name, "auth.allow")
-        else: gluster_set_option(name, "auth.allow", str(aa))
+
     opts = vol.get("options") or {}
     if isinstance(opts, dict):
         for k, v in opts.items(): gluster_set_option(name, str(k), str(v))
