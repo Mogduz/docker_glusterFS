@@ -10,14 +10,13 @@ volumes:
   - name: gv0
     replica: 2
     transport: tcp
-    auth_allow: 10.0.0.0/24
-    # auth_allow: ""   # leerer String => reset auth.allow
     options:
+      auth.allow: 10.0.1.0/24,192.168.1.0/24
       nfs.disable: on
       performance.client-io-threads: on
       cluster.quorum-type: auto
     # Optional: einzelne Optionen zurücksetzen (CSV)
-    options_reset: performance.io-thread-count
+    options_reset: performance.io-thread-count,auth.allow
     quota:
       limit: 200G
       soft_limit_pct: 80      # akzeptiert 80 oder '80%' (wirkt via 'quota default-soft-limit')
