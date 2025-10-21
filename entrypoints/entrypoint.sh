@@ -258,7 +258,14 @@ wait_for_glusterd() {
         if [ -n "${gpid:-}" ] && ! kill -0 "$gpid" 2>/dev/null; then
             warn "glusterd exited prematurely (pid=$gpid)"
             dump_glusterd_log
-        die "glusterd failed to start; see logs above"
+        die "glusterd failed to start
+
+# Solo-Setup via Python (idempotent YAML parsing)
+if [ "$MODE" = "solo" ] || [ "${MODE:-}" = "solo" ]; then
+    /usr/bin/env python3 /usr/local/bin/solo-startup.py
+fi
+
+; see logs above"
         fi
         if [ "$i" -gt "$GLUSTERD_READY_TIMEOUT" ]; then
             warn "Timeout while waiting for glusterd"
