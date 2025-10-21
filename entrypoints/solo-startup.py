@@ -29,6 +29,30 @@ def detect_brick_host():
             return v
     return "127.0.0.1"
 
+
+def pick_local_brick_host():
+    """Wähle einen Brick-Host, den glusterd als lokal erkennt.
+    Reihenfolge: bestehender BRICK_HOST -> BIND_ADDR -> erste IP aus `hostname -I` -> 127.0.0.1.
+    Bei Korrekturen wird BRICK_HOST in der Umgebung gesetzt, damit Folge-Logs konsistent sind.
+    """
+    host = detect_brick_host()
+    if host_seems_local(host):
+        return host
+    ba = os.environ.get("BIND_ADDR", "").strip()
+    if ba and host_seems_local(ba):
+        log(f"Korrigiere BRICK_HOST von '{host}' auf BIND_ADDR '{ba}'")
+        os.environ["BRICK_HOST"] = ba
+        return ba
+    res = run("hostname -I", check=False)
+    ips = (res.stdout or "").split()
+    if ips:
+        log(f"Korrigiere BRICK_HOST von '{host}' auf lokale IP '{ips[0]}'")
+        os.environ["BRICK_HOST"] = ips[0]
+        return ips[0]
+    log(f"Korrigiere BRICK_HOST von '{host}' auf '127.0.0.1'")
+    os.environ["BRICK_HOST"] = "127.0.0.1"
+    return "127.0.0.1"
+
 def host_seems_local(host: str) -> bool:
     if host in ("127.0.0.1","localhost"): return True
     res = run("hostname -I", check=False)
@@ -73,10 +97,10 @@ def volume_running(name: str) -> bool:
     return res.returncode == 0 and "Status of volume" in (res.stdout or "")
 
 def gluster_create(name: str, replica: int, transport: str, bricks):
-    host = detect_brick_host()
+    host = pick_local_brick_host()
     brick_specs = [f"{host}:{str(p)}" for p in bricks]
     if not host_seems_local(host):
-        log(f"Warnung: gewählter BRICK_HOST '{host}' wirkt nicht lokal; setze BRICK_HOST/BIND_ADDR passend.")
+        log(f"Warnung: BRICK_HOST '{host}' scheint weiterhin nicht lokal zu sein (unerwartet).")
     log(f"Brick host for volume '{name}': {host}")
     log("Bricks:", ", ".join(brick_specs))
     brick_args = " ".join(shlex.quote(b) for b in brick_specs)
