@@ -258,14 +258,7 @@ wait_for_glusterd() {
         if [ -n "${gpid:-}" ] && ! kill -0 "$gpid" 2>/dev/null; then
             warn "glusterd exited prematurely (pid=$gpid)"
             dump_glusterd_log
-        die "glusterd failed to start
-
-# Solo-Setup via Python (idempotent YAML parsing)
-if [ "$MODE" = "solo" ] || [ "${MODE:-}" = "solo" ]; then
-    /usr/bin/env python3 /usr/local/bin/solo-startup.py
-fi
-
-; see logs above"
+        die "glusterd failed to start; see logs above"
         fi
         if [ "$i" -gt "$GLUSTERD_READY_TIMEOUT" ]; then
             warn "Timeout while waiting for glusterd"
@@ -809,15 +802,15 @@ wait_for_glusterd "$gpid"
             ;;
     esac
 
-    # Python-basierter Solo-Bootstrap: YAML sicher parsen & Volumes idempotent erstellen
-    if [ "${MODE:-}" = "solo" ]; then
-        log "MODE=solo -> Python volume bootstrap (solo-startup.py)"
-        /usr/bin/env python3 /usr/local/bin/solo-startup.py
-        # glusterd im Vordergrund weiterlaufen lassen
-        wait "$gpid"
-        return 0
-    fi
-
+# Python-basierter Solo-Bootstrap: YAML sicher parsen & Volumes idempotent erstellen
+if [ "${MODE:-}" = "solo" ]; then
+    : "${BRICK_HOST:=${BIND_ADDR:-127.0.0.1}}"
+    export BRICK_HOST BIND_ADDR
+    log "MODE=solo -> Python volume bootstrap (solo-startup.py)"
+    /usr/bin/env python3 /usr/local/bin/solo-startup.py
+    wait "$gpid"
+    return 0
+fi
 
     ensure_replica_defaults_for_mode
     bootstrap_from_yaml_or_env
