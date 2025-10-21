@@ -12,8 +12,8 @@ volumes:
     transport: tcp
     auth_allow: 10.0.0.0/24
     # auth_allow: ""   # leerer String => reset auth.allow
-    nfs_disable: true
     options:
+      nfs.disable: on
       performance.client-io-threads: on
       cluster.quorum-type: auto
     # Optional: einzelne Optionen zurücksetzen (CSV)
