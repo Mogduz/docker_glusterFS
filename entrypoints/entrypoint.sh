@@ -809,6 +809,16 @@ wait_for_glusterd "$gpid"
             ;;
     esac
 
+    # Python-basierter Solo-Bootstrap: YAML sicher parsen & Volumes idempotent erstellen
+    if [ "${MODE:-}" = "solo" ]; then
+        log "MODE=solo -> Python volume bootstrap (solo-startup.py)"
+        /usr/bin/env python3 /usr/local/bin/solo-startup.py
+        # glusterd im Vordergrund weiterlaufen lassen
+        wait "$gpid"
+        return 0
+    fi
+
+
     ensure_replica_defaults_for_mode
     bootstrap_from_yaml_or_env
     # Wait on glusterd
