@@ -30,8 +30,6 @@ services:
       - ${HOST_BRICK1:?set in .env}:/bricks/brick1
       - ${HOST_BRICK2:?set in .env}:/bricks/brick2
       - ${VOLUMES_FILE:-./volumes.yml}:/etc/gluster/volumes.yml:ro
-      - ${BRICK1_MAPPING}
-      - ${BRICK2_MAPPING}
     healthcheck:
       test:
       - CMD-SHELL
