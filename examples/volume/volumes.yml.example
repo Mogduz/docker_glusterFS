@@ -20,7 +20,7 @@ volumes:
     options_reset: performance.io-thread-count
     quota:
       limit: 200G
-      soft_limit_pct: 80
+      soft_limit_pct: 80      # akzeptiert 80 oder '80%' (wirkt via 'quota default-soft-limit')
 
   - name: gv1
     replica: 2
