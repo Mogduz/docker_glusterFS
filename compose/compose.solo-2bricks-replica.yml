@@ -39,6 +39,8 @@ services:
       retries: ${HC_RETRIES:-20}
       start_period: ${HC_START_PERIOD:-60s}
     restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
 networks:
   gluster-net:
     driver: bridge
