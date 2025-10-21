@@ -39,20 +39,79 @@ volumes:
     nfs_disable: true
 
     # Gluster 'volume set' Optionen (Beispiele; nach Bedarf erweitern/ändern)
-    options:
-      cluster.quorum-type: auto
-      cluster.choose-local: on
-      performance.client-io-threads: on
-      performance.read-ahead: on
-      performance.quick-read: on
-      performance.io-cache: on
-      network.ping-timeout: 10
-      diagnostics.brick-sys-log-level: INFO
 
-    # Einzelne Optionen auf Default zurücksetzen (kommagetrennt)
-    options_reset: performance.io-thread-count,cluster.heal-timeout
+# Volume-Optionen (umfangreiche Auswahl; alle Schlüssel sind original Gluster-Keys)
+# Hinweis:
+# - Diese Datei dient als DOKU & Vorlage. Kommentierte Einträge sind Beispiele.
+# - Prüfe die tatsächlich verfügbaren Optionen auf deinem System mit:
+#     gluster volume get <VOL> all
+# - Defaults können je nach Version/Build variieren (siehe Gluster-Doku).
+options:
+  # --- Zugriff/Authentisierung (Client-Zulassungen) ---
+  auth.allow: "10.0.1.*"                 # Liste erlaubter Clients (CIDR/Host/IP; '*' = alle). Für Testnetze einschränken.
+  # auth.reject: ""                       # Liste zu blockierender Clients. Leer lassen, wenn nicht nötig.
 
-    # Quota-Konfiguration (optional)
-    quota:
-      limit: 200G            # "off" | "disable" | "0" -> Quota deaktivieren
-      soft_limit_pct: 80     # optional; akzeptiert 80 oder '80%' (wirkt via 'quota default-soft-limit')
+  # --- NFS (Legacy gNFS) ---
+  nfs.disable: on                        # gNFS deaktivieren; empfohlen, wenn FUSE oder NFS-Ganesha genutzt wird.
+
+  # --- Cluster/Quorum/Self-Heal (Replica-Volumes) ---
+  cluster.quorum-type: auto              # auto/fixed/none. Für Replica-2 'auto' = Schreibsperre bei Netzsplit (Schutz vor Split-Brain).
+  # cluster.quorum-count: 1              # nur bei quorum-type=fixed relevant.
+  cluster.self-heal-daemon: on           # proaktives Self-Heal aktiv (Standard).
+  cluster.heal-timeout: 10               # Sek.; schnellere Prüffrequenz für Self-Heal (Default 600). Aggressiver für Lab/Tests.
+  cluster.background-self-heal-count: 8  # parallele Heal-Jobs pro Client.
+  cluster.favorite-child-policy: "mtime" # automatische Split-Brain-Auflösung (mit Vorsicht einsetzen). Alternativen: size|ctime|majority
+  cluster.lookup-unhashed: on            # Lookup über alle Subvolumes (spürbar bei verteilten Workloads).
+  cluster.lookup-optimize: on            # -ve Lookup Optimierung.
+  cluster.min-free-disk: "10%"           # benötigt freien Platz (Disk-Reserve pro Brick).
+  cluster.min-free-inodes: "10%"         # Reserve bzgl. Inodes.
+  cluster.rebal-throttle: normal         # normal|lazy|aggressive – Migrations-Parallelität beim Rebalance.
+  cluster.ensure-durability: on          # Durability erhöhen (Metadaten/Journal).
+
+  # --- Netzwerk ---
+  network.ping-timeout: 10               # Sekunden; aggressiver als Default 42s für schnellere Erkennung von Ausfällen.
+  network.frame-timeout: 1800            # Sekunden; Operation-Timeout (Default).
+
+  # --- Performance/Caches/Threads ---
+  performance.client-io-threads: on      # IO-Thread-Translator für Clients.
+  performance.io-thread-count: 16        # I/O Threads (Default 16); auf schwächeren Knoten ggf. reduzieren.
+  performance.quick-read: on             # Hot-Read Pfad.
+  performance.io-cache: on               # Read-Cache.
+  performance.cache-size: 128MB          # Read-Cache-Größe (Default 32MB). Für große sequentielle Reads ggf. erhöhen.
+  performance.cache-min-file-size: 0B    # nur Dateien >= dieser Größe cachen.
+  performance.cache-max-file-size: 2GB   # nur Dateien <= dieser Größe cachen.
+  performance.cache-refresh-timeout: 1   # Sekunden bis Revalidierung.
+  performance.md-cache: on               # Metadaten-Cache (beschleunigt ls/stat).
+  performance.md-cache-timeout: 5        # Sekunden bis Metadaten-Revalidierung (Default 1).
+  performance.open-behind: on            # Open erst bei Bedarf zum Backend.
+  performance.lazy-open: yes             # setzt open-behind voraus (Yes/No).
+  performance.stat-prefetch: on          # Stat-Vorabrufe.
+  performance.readdir-ahead: on          # Directory-Read-Ahead; schnelleres Verzeichnis-Listing.
+  performance.parallel-readdir: on       # parallele Verzeichnis-Liste (siehe Doku).
+  performance.strict-write-ordering: on  # spätere Writes überholen frühere nicht.
+  performance.strict-o-direct: on        # O_DIRECT wirkt wie erwartet (keine Write-Behind-Caches).
+  performance.rda-cache-limit: 32MB      # Gesamtlimit für readdir-ahead Cache.
+  performance.rda-request-size: 128KB    # Größe der Directory-Entry-Puffer.
+  performance.write-behind: on           # Write-Behind aktivieren.
+  performance.write-behind-window-size: 1MB # Puffergröße pro Inode.
+  performance.flush-behind: on           # Flush asynchron zulassen.
+
+  # --- Server/Transport ---
+  # server.allow-insecure: off           # Nur aktivieren, wenn viele Bricks/Ports – siehe Doku.
+  # server.statedump-path: /var/run/gluster # Pfad für Statedumps.
+
+  # --- Storage/Umgang mit Dateien & Masken ---
+  storage.reserve: "1%"                  # Reserviert Platz pro Brick (Default 1%). Für Testsysteme i. d. R. OK.
+  storage.health-check-interval: 30      # Sek.; 0 zum Deaktivieren.
+  storage.create-mask: "0777"            # max. Datei-Rechte (Upper bound).
+  storage.create-directory-mask: "0777"  # max. Verzeichnis-Rechte.
+  storage.force-create-mode: "0000"      # min. Datei-Rechte (Lower bound).
+  storage.force-create-directory: "0000" # min. Verzeichnis-Rechte.
+
+  # --- Features ---
+  # features.trash: off                  # Papierkorb (löschen → Trash). Aktivieren, wenn sinnvoll.
+  # features.shard-block-size: 64MB      # nur bei Sharding relevant.
+  # features.uss: off                    # User Serviceable Snapshots.
+
+  # --- Diagnostik/Logging ---
+  diagnostics.brick-sys-log-level: INFO  # Brick-Log-Level.
