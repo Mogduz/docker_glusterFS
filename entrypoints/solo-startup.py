@@ -170,7 +170,15 @@ def reconcile_from_yaml(name: str, vol: dict):
     if quota.get("limit"):
         run(f"gluster volume quota {shlex.quote(name)} enable", check=False)
         run(f"gluster volume quota {shlex.quote(name)} limit-usage / {shlex.quote(str(quota['limit']))}", check=False)
-        if quota.get("soft_limit_pct"): gluster_set_option(name, "features.soft-limit", str(int(quota["soft_limit_pct"])))
+        soft_raw = quota.get("soft_limit_pct")
+        if soft_raw is not None:
+            val = str(soft_raw).strip()
+            if val.endswith('%'): val = val[:-1]
+            try:
+                pct = int(val)
+            except ValueError:
+                die(f"Ungültiger Wert für quota.soft_limit_pct: {soft_raw!r} (erwartet z.B. 80 oder '80%')")
+            run(f"gluster volume quota {shlex.quote(name)} default-soft-limit {pct}", check=False)
 
 def main():
     host = detect_brick_host()
